@@ -48,6 +48,7 @@ let audioCtx: AudioContext | null = null;
 let processor: ScriptProcessorNode | null = null;
 let stream: MediaStream | null = null;
 let active = false;
+let audioBuf: Float32Array | null = null;
 
 const pitchTimes: number[] = [];
 const pitchCents: number[] = [];
@@ -110,6 +111,13 @@ const ltasPlot = new uPlot(
   document.querySelector("#ltas-chart")!,
 );
 
+function clearCharts(): void {
+  pitchTimes.length = 0;
+  pitchCents.length = 0;
+  pitchPlot.setData([[], []]);
+  ltasPlot.setData([[], []]);
+}
+
 function updatePitchChart(points: F0Point[]): void {
   for (const p of points) {
     if (!p.voiced || Number.isNaN(p.cents)) continue;
@@ -143,16 +151,31 @@ worker.onmessage = (ev: MessageEvent<WorkerOutMessage>) => {
   if (msg.type === "error") statusEl.textContent = `Ошибка: ${msg.message}`;
 };
 
+worker.onerror = (ev) => {
+  statusEl.textContent = `Ошибка worker: ${ev.message}`;
+  stop();
+};
+
 async function start(): Promise<void> {
   stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   });
+  stream.getAudioTracks()[0]?.addEventListener("ended", () => stop());
+
   audioCtx = new AudioContext();
+  await audioCtx.resume();
+
+  audioBuf = new Float32Array(4096);
   const source = audioCtx.createMediaStreamSource(stream);
   processor = audioCtx.createScriptProcessor(4096, 1, 1);
   processor.onaudioprocess = (e) => {
     const input = e.inputBuffer.getChannelData(0);
-    worker.postMessage({ type: "audio", samples: Float32Array.from(input) });
+    audioBuf!.set(input);
+    worker.postMessage(
+      { type: "audio", samples: audioBuf! },
+      [audioBuf!.buffer],
+    );
+    audioBuf = new Float32Array(4096);
   };
   const silent = audioCtx.createGain();
   silent.gain.value = 0;
@@ -165,6 +188,7 @@ async function start(): Promise<void> {
 }
 
 function stop(): void {
+  if (!active) return;
   worker.postMessage({ type: "stop" });
   processor?.disconnect();
   processor = null;
@@ -172,8 +196,22 @@ function stop(): void {
   stream = null;
   void audioCtx?.close();
   audioCtx = null;
+  audioBuf = null;
   toggleBtn.textContent = "Начать";
   active = false;
+  clearCharts();
+  renderMetrics({
+    when: "",
+    duration_s: 0,
+    sample_rate: 44100,
+    voiced_share: 0,
+    f0_median_hz: null,
+    vibrato: null,
+    h1_h2_db: null,
+    sf_balance_db: null,
+    spectral_centroid_hz: 0,
+    formants_hz: [],
+  });
 }
 
 toggleBtn.addEventListener("click", async () => {

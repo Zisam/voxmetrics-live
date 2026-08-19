@@ -192,15 +192,11 @@ export class F0Tracker {
   }
 
   append(samples: Float32Array | Float64Array): { t: number; f0: number; voiced: boolean }[] {
-    const merged = new Float64Array(this.buffer.length + samples.length);
-    merged.set(this.buffer);
-    for (let i = 0; i < samples.length; i++) merged[this.buffer.length + i] = samples[i]!;
-    this.buffer = merged;
     this.elapsedSamples += samples.length;
 
     let energySum = 0;
-    for (let i = 0; i < merged.length; i++) energySum += merged[i]! * merged[i]!;
-    this.rmsAll = Math.sqrt(energySum / merged.length) || 1e-12;
+    for (let i = 0; i < this.buffer.length; i++) energySum += this.buffer[i]! * this.buffer[i]!;
+    this.rmsAll = Math.sqrt(energySum / this.buffer.length) || 1e-12;
 
     const out: { t: number; f0: number; voiced: boolean }[] = [];
     while (this.nextFrame * this.hop + this.frame <= this.buffer.length) {
@@ -213,7 +209,8 @@ export class F0Tracker {
       for (let j = 0; j < this.frame; j++) this.seg[j] = (this.seg[j]! - mean) * this.window[j]!;
 
       const energy = rms(this.seg);
-      const t = (start + this.frame / 2) / this.rate;
+      const streamSample = this.elapsedSamples - this.buffer.length + start + this.frame / 2;
+      const t = streamSample / this.rate;
       if (energy < 0.1 * this.rmsAll) {
         out.push({ t, f0: 0, voiced: false });
         this.nextFrame++;
@@ -244,11 +241,12 @@ export class F0Tracker {
     return out;
   }
 
-  trim(maxSamples: number): void {
-    if (this.buffer.length <= maxSamples) return;
-    const drop = this.buffer.length - maxSamples;
-    this.buffer = this.buffer.slice(drop);
-    const droppedFrames = Math.floor(drop / this.hop);
-    this.nextFrame = Math.max(0, this.nextFrame - droppedFrames);
+  syncBuffer(audio: Float64Array, droppedFrames = 0): void {
+    this.buffer = audio.slice();
+    if (droppedFrames > 0) {
+      this.nextFrame = Math.max(0, this.nextFrame - droppedFrames);
+    }
+    const maxFrame = Math.max(0, Math.floor((this.buffer.length - this.frame) / this.hop) + 1);
+    if (this.nextFrame > maxFrame) this.nextFrame = maxFrame;
   }
 }
