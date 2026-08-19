@@ -1,11 +1,21 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { WorkerOutMessage } from "../src/types.ts";
-import { BUFFER_SECONDS, METRICS_INTERVAL_MS } from "../src/dsp/constants.ts";
+import {
+  BASELINE_VOICED_SAMPLES,
+  BUFFER_SECONDS,
+  METRICS_INTERVAL_MS,
+} from "../src/dsp/constants.ts";
 import * as analyseModule from "../src/dsp/analyse.ts";
 import {
-  appendBuffer,
+  appendAudioRing,
+  createAudioRing,
+} from "../src/ui/audio-ring.ts";
+import {
   createWorkerState,
   handleWorkerMessage,
+  maybeEmitMetrics,
+  pushRecentVoiced,
+  refreshHudBaseline,
 } from "../src/worker/dsp-core.ts";
 import { synth, RATE } from "./synth.ts";
 
@@ -40,39 +50,61 @@ function messageTypes(messages: WorkerOutMessage[]): string[] {
   return messages.map((m) => m.type);
 }
 
-describe("appendBuffer", () => {
-  it("appends samples without trimming under the limit", () => {
+describe("audio ring in worker", () => {
+  it("appendAudioRing fills ring under capacity", () => {
+    const ring = createAudioRing(RATE);
+    appendAudioRing(ring, new Float32Array(1000).fill(0.1), RATE);
+    expect(ring.length).toBe(1000);
+  });
+});
+
+describe("baseline helpers", () => {
+  it("caps recent voiced samples", () => {
     const state = createWorkerState();
-    state.rate = RATE;
-    const chunk = toFloat32(new Float64Array(1000).fill(0.1));
-    expect(appendBuffer(state, chunk)).toBe(0);
-    expect(state.buffer.length).toBe(1000);
+    for (let i = 0; i < BASELINE_VOICED_SAMPLES + 10; i++) {
+      pushRecentVoiced(state, 440 + i);
+    }
+    expect(state.recentVoicedHz.length).toBe(BASELINE_VOICED_SAMPLES);
+    expect(state.recentVoicedHz[0]).toBe(450);
   });
 
-  it("trims aligned to hop and returns dropped frame count", () => {
+  it("refreshes baseline immediately from voiced samples", () => {
     const state = createWorkerState();
-    state.rate = RATE;
-    const hop = Math.floor(0.005 * RATE);
-    const maxSamples = RATE * BUFFER_SECONDS;
-    state.buffer = new Float64Array(maxSamples);
-
-    const extra = hop * 3;
-    const dropped = appendBuffer(state, toFloat32(new Float64Array(extra).fill(0.1)));
-
-    expect(state.buffer.length).toBe(maxSamples);
-    expect(dropped).toBe(3);
+    state.recentVoicedHz = [440, 440, 440];
+    refreshHudBaseline(state);
+    expect(state.hudBaselineHz).toBe(440);
   });
 
-  it("does not trim when overflow is smaller than one hop", () => {
+  it("metrics emission does not overwrite hud baseline", () => {
     const state = createWorkerState();
     state.rate = RATE;
-    const hop = Math.floor(0.005 * RATE);
-    const maxSamples = RATE * BUFFER_SECONDS;
-    state.buffer = new Float64Array(maxSamples);
+    const sig = synth(0, 0, 440, 2);
+    appendAudioRing(state.ring, toFloat32(sig), RATE);
+    state.recentVoicedHz = [330, 330, 330];
+    state.hudBaselineHz = 330;
+    state.lastMetricsAt = 0;
 
-    const extra = hop - 1;
-    expect(appendBuffer(state, toFloat32(new Float64Array(extra).fill(0.1)))).toBe(0);
-    expect(state.buffer.length).toBe(maxSamples + extra);
+    const analyseSpy = vi.spyOn(analyseModule, "analyseBuffer");
+    analyseSpy.mockReturnValue({
+      metrics: {
+        when: "",
+        duration_s: 2,
+        sample_rate: RATE,
+        voiced_share: 1,
+        f0_median_hz: 440,
+        vibrato: null,
+        h1_h2_db: null,
+        sf_balance_db: null,
+        spectral_centroid_hz: 1000,
+        formants_hz: [],
+      },
+      ltas: null,
+    });
+
+    maybeEmitMetrics(state, METRICS_INTERVAL_MS + 1);
+    expect(state.hudBaselineHz).toBe(330);
+
+    analyseSpy.mockRestore();
   });
 });
 
@@ -87,6 +119,9 @@ describe("handleWorkerMessage", () => {
     const stop = handleWorkerMessage(state, { type: "stop" }, 1000);
     expect(stop).toEqual([{ type: "status", message: "Остановлено" }]);
     expect(state.running).toBe(false);
+    expect(state.tracker).toBeNull();
+    expect(state.hudBaselineHz).toBe(0);
+    expect(state.recentVoicedHz).toEqual([]);
   });
 
   it("ignores audio before start", () => {
@@ -112,7 +147,7 @@ describe("handleWorkerMessage", () => {
       200,
     );
     expect(out).toEqual([]);
-    expect(state.buffer.length).toBe(0);
+    expect(state.ring.length).toBe(0);
   });
 
   it("returns empty when chunk is too short for a new frame", () => {
@@ -135,21 +170,6 @@ describe("handleWorkerMessage", () => {
       METRICS_INTERVAL_MS + 100,
     );
     expect(out).toEqual([]);
-    expect(out.some((m) => m.type === "metrics")).toBe(false);
-  });
-
-  it("emits f0 points for voiced audio", () => {
-    const state = createWorkerState();
-    handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
-
-    const sig = synth(0, 0, 440, 1);
-    const out = feedAudio(state, sig, 4096, 0);
-    const f0Msgs = out.filter((m) => m.type === "f0");
-    expect(f0Msgs.length).toBeGreaterThan(0);
-
-    const voiced = f0Msgs.flatMap((m) => m.points.filter((p) => p.voiced));
-    expect(voiced.length).toBeGreaterThan(0);
-    expect(voiced[0]!.cents).toBeCloseTo(0, 5);
   });
 
   it("emits metrics and ltas after interval with enough buffer", () => {
@@ -192,6 +212,15 @@ describe("handleWorkerMessage", () => {
     expect(types.indexOf("metrics")).toBeLessThan(types.indexOf("ltas"));
   });
 
+  it("does not emit metrics before interval elapses", () => {
+    const state = createWorkerState();
+    handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
+
+    const sig = synth(0, 0, 440, 1);
+    const out = feedAudio(state, sig, 4096, METRICS_INTERVAL_MS - 1);
+    expect(out.some((m) => m.type === "metrics")).toBe(false);
+  });
+
   it("respects monotonic clock for metrics interval", () => {
     const state = createWorkerState();
     handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
@@ -208,22 +237,46 @@ describe("handleWorkerMessage", () => {
     expect(later.some((m) => m.type === "metrics")).toBe(true);
   });
 
-  it("does not emit metrics before interval elapses", () => {
+  it("emits f0 points for voiced audio", () => {
     const state = createWorkerState();
     handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
 
     const sig = synth(0, 0, 440, 1);
-    const out = feedAudio(state, sig, 4096, METRICS_INTERVAL_MS - 1);
-    expect(out.some((m) => m.type === "metrics")).toBe(false);
+    const out = feedAudio(state, sig, 4096, 0);
+    const f0Msgs = out.filter((m) => m.type === "f0");
+    expect(f0Msgs.length).toBeGreaterThan(0);
+
+    const voiced = f0Msgs.flatMap((m) => m.points.filter((p) => p.voiced));
+    expect(voiced.length).toBeGreaterThan(0);
+    expect(voiced[0]!.f0_hz).toBeGreaterThan(430);
+    expect(voiced[0]!.cents).toBeCloseTo(0, 1);
   });
 
-  it("recenters pitch chart cents after metrics update", () => {
+  it("updates hud baseline on first voiced chunk", () => {
+    const state = createWorkerState();
+    handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
+
+    const sig = synth(0, 0, 440, 0.5);
+    feedAudio(state, sig, 4096, 0);
+    expect(state.hudBaselineHz).toBeGreaterThan(430);
+  });
+
+  it("updates baseline after interval with enough voiced frames", () => {
     const state = createWorkerState();
     handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
 
     const sig = synth(0, 0, 440, 2);
     feedAudio(state, sig, 4096, METRICS_INTERVAL_MS + 1);
-    expect(state.chartMedianHz).toBeGreaterThan(430);
+    expect(state.hudBaselineHz).toBeGreaterThan(430);
+  });
+
+  it("recenters pitch cents around refreshed baseline", () => {
+    const state = createWorkerState();
+    handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
+
+    const sig = synth(0, 0, 440, 2);
+    feedAudio(state, sig, 4096, METRICS_INTERVAL_MS + 1);
+    expect(state.hudBaselineHz).toBeGreaterThan(430);
 
     const later = handleWorkerMessage(
       state,
@@ -238,6 +291,12 @@ describe("handleWorkerMessage", () => {
     }
   });
 
+  it("clears baseline before first voiced frames in a session", () => {
+    const state = createWorkerState();
+    handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
+    expect(state.hudBaselineHz).toBe(0);
+  });
+
   it("keeps buffer within rolling window limit", () => {
     const state = createWorkerState();
     handleWorkerMessage(state, { type: "start", sampleRate: RATE }, 0);
@@ -247,8 +306,8 @@ describe("handleWorkerMessage", () => {
 
     const hop = Math.floor(0.005 * RATE);
     const maxSamples = RATE * BUFFER_SECONDS;
-    expect(state.buffer.length).toBeGreaterThan(maxSamples - hop);
-    expect(state.buffer.length).toBeLessThanOrEqual(maxSamples + hop - 1);
+    expect(state.ring.length).toBeGreaterThan(maxSamples - hop);
+    expect(state.ring.length).toBeLessThanOrEqual(maxSamples);
   });
 
   it("posts error message when analysis throws", () => {

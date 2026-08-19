@@ -1,154 +1,272 @@
 import "./style.css";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
-import type {
-  F0Point,
-  MetricsSnapshot,
-  WorkerOutMessage,
-} from "./types.ts";
-import { noteName } from "./dsp/math.ts";
-import { VIB_TRUSTED_SECONDS } from "./dsp/constants.ts";
+import type { F0Point, WorkerOutMessage } from "./types.ts";
+import { midiToNoteLabel } from "./dsp/math.ts";
+import {
+  appendScrollingPitchPoints,
+  clearPitchSeries,
+  computeYRange,
+  createScrollState,
+  hudFromPoint,
+  nowMarker,
+  pitchXRange,
+  resetScrollState,
+  resolveHudPoint,
+  tickWallScroll,
+} from "./ui/pitch-buffer.ts";
+import {
+  acceptWorkerStreamMessage,
+} from "./ui/session.ts";
+import {
+  clearMetricsStore,
+  setLatestLtas,
+  setLatestMetrics,
+} from "./ui/metrics-store.ts";
+import {
+  createFrameScheduler,
+  resetYRangeCache,
+  yRangeWithHysteresis,
+} from "./ui/chart-frame.ts";
 
-const app = document.querySelector<HTMLDivElement>("#app")!;
-app.innerHTML = `
-  <header>
-    <h1>voxmetrics live</h1>
-    <p class="subtitle">Объективные замеры голоса в реальном времени. Аудио не покидает браузер.</p>
+document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <h1>voxmetrics live</h1>
+      <button id="toggle" type="button">Начать</button>
+      <span id="status" class="status">Готов</span>
+      <span class="privacy">Аудио не покидает браузер</span>
+    </div>
+    <div class="hud" id="hud">
+      <span class="hud-note" id="current-note">—</span>
+      <span class="hud-cents" id="current-cents"></span>
+      <span class="hud-hz" id="current-hz"></span>
+    </div>
   </header>
-  <div class="controls">
-    <button id="toggle" type="button">Начать</button>
-    <span id="status" class="status">Готов</span>
-  </div>
-  <section class="charts">
-    <div class="panel">
-      <h2>Отклонение высоты, центы</h2>
-      <div id="pitch-chart"></div>
-    </div>
-    <div class="panel">
-      <h2>LTAS</h2>
-      <div id="ltas-chart"></div>
-    </div>
-  </section>
-  <section class="metrics" id="metrics"></section>
-  <footer>
+  <main class="pitch-view">
+    <div id="pitch-chart"></div>
+  </main>
+  <footer class="footer">
     <a href="https://github.com/Zisam/voxmetrics-live">GitHub</a>
-    · алгоритмы портированы из <a href="https://github.com/Zisam/voxmetrics">voxmetrics</a>
+    · алгоритмы из <a href="https://github.com/Zisam/voxmetrics">voxmetrics</a>
   </footer>
 `;
 
 const toggleBtn = document.querySelector<HTMLButtonElement>("#toggle")!;
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
-const metricsEl = document.querySelector<HTMLDivElement>("#metrics")!;
+const currentNoteEl = document.querySelector<HTMLSpanElement>("#current-note")!;
+const currentCentsEl = document.querySelector<HTMLSpanElement>("#current-cents")!;
+const currentHzEl = document.querySelector<HTMLSpanElement>("#current-hz")!;
+const pitchChartEl = document.querySelector<HTMLDivElement>("#pitch-chart")!;
+const pitchViewEl = document.querySelector<HTMLElement>(".pitch-view")!;
 
 const worker = new Worker(new URL("./worker/dsp.ts", import.meta.url), {
   type: "module",
 });
 
 let audioCtx: AudioContext | null = null;
-let processor: ScriptProcessorNode | null = null;
+let captureNode: AudioWorkletNode | null = null;
 let stream: MediaStream | null = null;
 let active = false;
-let audioBuf: Float32Array | null = null;
 
-const pitchTimes: number[] = [];
-const pitchCents: number[] = [];
-const WINDOW_SEC = 10;
+const pitchX: number[] = [];
+const pitchMidi: (number | null)[] = [];
+const scrollState = createScrollState();
+let pendingF0Batches: F0Point[][] = [];
+let pendingHud: F0Point | null | undefined;
+let chartLoopActive = false;
 
-function fmt(v: number | null | undefined, digits = 2): string {
-  if (v === null || v === undefined) return "—";
-  return v.toFixed(digits).replace(/\.?0+$/, "");
+function renderChartFrame(): void {
+  const wallSec = performance.now() / 1000;
+  tickWallScroll(scrollState, pitchX, pitchMidi, wallSec);
+
+  if (pendingF0Batches.length > 0) {
+    const batches = pendingF0Batches;
+    pendingF0Batches = [];
+    let result = { hudPoint: null as F0Point | null, silenceBatch: true };
+    for (const batch of batches) {
+      result = appendScrollingPitchPoints(
+        scrollState,
+        pitchX,
+        pitchMidi,
+        batch,
+        undefined,
+        wallSec,
+      );
+    }
+    pendingHud = resolveHudPoint(result);
+  }
+
+  pitchPlot.setData([pitchX, pitchMidi]);
+  if (pendingHud !== undefined) {
+    applyHud(pendingHud);
+    pendingHud = undefined;
+  }
 }
 
-function renderMetrics(m: MetricsSnapshot): void {
-  const v = m.vibrato;
-  const vibratoStatus = !v
-    ? "не обнаружено (нужна ровная нота ≥1 с)"
-    : v.trusted
-      ? "надёжно"
-      : `ориентировочно (< ${VIB_TRUSTED_SECONDS} с)`;
+const chartFrame = createFrameScheduler(() => {
+  renderChartFrame();
+  if (chartLoopActive) chartFrame.schedule();
+});
 
-  metricsEl.innerHTML = `
-    <div class="card"><span class="label">F0</span><span class="value">${fmt(m.f0_median_hz, 1)} Гц (${noteName(m.f0_median_hz)})</span></div>
-    <div class="card"><span class="label">Озвучено</span><span class="value">${Math.round(m.voiced_share * 100)}%</span></div>
-    <div class="card"><span class="label">Вибрато</span><span class="value">${vibratoStatus}</span></div>
-    <div class="card"><span class="label">Частота вибрато</span><span class="value">${v ? fmt(v.rate_hz) + " Гц" : "—"}</span></div>
-    <div class="card"><span class="label">Размах</span><span class="value">${v ? fmt(v.extent_cents_direct, 1) + " ¢" : "—"}</span></div>
-    <div class="card"><span class="label">Регулярность</span><span class="value">${v?.regularity ?? "—"}</span></div>
-    <div class="card"><span class="label">Певч. форманта</span><span class="value">${fmt(m.sf_balance_db)} дБ</span></div>
-    <div class="card"><span class="label">H1-H2</span><span class="value">${fmt(m.h1_h2_db)} дБ</span></div>
-    <div class="card"><span class="label">Спектр. центр</span><span class="value">${fmt(m.spectral_centroid_hz, 1)} Гц</span></div>
-    <div class="card wide"><span class="label">Форманты</span><span class="value">${m.formants_hz.length ? m.formants_hz.map((f, i) => `F${i + 1}=${f}`).join(", ") + " Гц" : "—"}</span></div>
-  `;
+function startChartLoop(): void {
+  chartLoopActive = true;
+  chartFrame.schedule();
+}
+
+function stopChartLoop(): void {
+  chartLoopActive = false;
+  chartFrame.cancel();
+}
+
+function chartSize(): { width: number; height: number } {
+  return {
+    width: pitchViewEl.clientWidth,
+    height: pitchViewEl.clientHeight,
+  };
+}
+
+function drawNoteGrid(u: uPlot): void {
+  const { ctx } = u;
+  const yScale = u.scales.y;
+  if (yScale.min == null || yScale.max == null) return;
+
+  const left = u.bbox.left;
+  const right = left + u.bbox.width;
+  const lo = Math.ceil(yScale.min);
+  const hi = Math.floor(yScale.max);
+
+  for (let m = lo; m <= hi; m++) {
+    const y = u.valToPos(m, "y", true);
+    const isC = m % 12 === 0;
+    ctx.strokeStyle = isC ? "#3d4455" : "#252a36";
+    ctx.lineWidth = isC ? 1.5 : 1;
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+  }
+}
+
+function drawNowMarker(u: uPlot): void {
+  const marker = nowMarker(u.data[1] as (number | null)[]);
+  if (!marker) return;
+
+  const x = u.valToPos(marker.t, "x", true);
+  const y = u.valToPos(marker.midi, "y", true);
+  const { ctx } = u;
+
+  ctx.beginPath();
+  ctx.arc(x, y, 6, 0, Math.PI * 2);
+  ctx.fillStyle = "#6ee7b7";
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 const pitchPlot = new uPlot(
   {
-    width: app.clientWidth - 48,
-    height: 220,
-    series: [{}, { label: "центы", stroke: "#5b8def", width: 1.5 }],
-    axes: [
-      { stroke: "#888", grid: { stroke: "#333" } },
-      { stroke: "#888", grid: { stroke: "#333" } },
+    ...chartSize(),
+    series: [
+      {},
+      {
+        label: "высота",
+        stroke: "#5b8def",
+        width: 2,
+        spanGaps: false,
+      },
     ],
-    scales: { x: { time: false } },
+    scales: {
+      x: { time: false, range: pitchXRange() },
+      y: {
+        range: (_u, _min, _max) =>
+          yRangeWithHysteresis(computeYRange(pitchMidi), performance.now()),
+      },
+    },
+    axes: [
+      {
+        stroke: "#666",
+        grid: { show: true, stroke: "#1e2230" },
+        ticks: { show: true, stroke: "#444" },
+        values: (_u, vals) =>
+          vals.map((v) => (Number.isInteger(v) ? `${v} с` : "")),
+      },
+      {
+        stroke: "#888",
+        grid: { show: false },
+        ticks: { show: false },
+        size: 52,
+        values: (_u, vals) =>
+          vals.map((v) => {
+            const rounded = Math.round(v);
+            return Math.abs(v - rounded) < 0.01 ? midiToNoteLabel(rounded) : "";
+          }),
+        splits: (_u, _idx, min, max) => {
+          const lo = Math.ceil(min);
+          const hi = Math.floor(max);
+          const splits: number[] = [];
+          for (let m = lo; m <= hi; m++) splits.push(m);
+          return splits;
+        },
+      },
+    ],
+    hooks: {
+      drawClear: [(u) => drawNoteGrid(u)],
+      draw: [(u) => drawNowMarker(u)],
+    },
   },
   [[], []],
-  document.querySelector("#pitch-chart")!,
+  pitchChartEl,
 );
 
-const ltasPlot = new uPlot(
-  {
-    width: app.clientWidth - 48,
-    height: 220,
-    series: [{}, { label: "dB", stroke: "#e8a838", width: 1.5 }],
-    axes: [
-      { stroke: "#888", grid: { stroke: "#333" }, scale: "x" },
-      { stroke: "#888", grid: { stroke: "#333" } },
-    ],
-    scales: { x: { distr: 3 } },
-  },
-  [[], []],
-  document.querySelector("#ltas-chart")!,
-);
+function applyHud(point: F0Point | null): void {
+  const hud = hudFromPoint(point);
+  currentNoteEl.textContent = hud.note;
+  currentCentsEl.textContent = hud.cents;
+  currentCentsEl.className = hud.centsClass;
+  currentHzEl.textContent = hud.hz;
+}
 
-function clearCharts(): void {
-  pitchTimes.length = 0;
-  pitchCents.length = 0;
+function clearChart(): void {
+  stopChartLoop();
+  resetScrollState(scrollState);
+  resetYRangeCache();
+  clearPitchSeries(pitchX, pitchMidi);
+  pendingF0Batches = [];
+  pendingHud = undefined;
   pitchPlot.setData([[], []]);
-  ltasPlot.setData([[], []]);
+  applyHud(null);
+  clearMetricsStore();
 }
 
 function updatePitchChart(points: F0Point[]): void {
-  for (const p of points) {
-    if (!p.voiced || Number.isNaN(p.cents)) continue;
-    pitchTimes.push(p.t);
-    pitchCents.push(p.cents);
-  }
-  const latest = pitchTimes.length ? pitchTimes[pitchTimes.length - 1]! : 0;
-  while (pitchTimes.length && pitchTimes[0]! < latest - WINDOW_SEC) {
-    pitchTimes.shift();
-    pitchCents.shift();
-  }
-  pitchPlot.setData([pitchTimes, pitchCents]);
+  if (!points.length) return;
+  pendingF0Batches.push(points);
+  chartFrame.schedule();
 }
 
-function updateLtas(freqs: number[], db: number[]): void {
-  const maskIdx: number[] = [];
-  for (let i = 0; i < freqs.length; i++) {
-    if (freqs[i]! <= 8000) maskIdx.push(i);
-  }
-  const xf = maskIdx.map((i) => freqs[i]!);
-  const yf = maskIdx.map((i) => db[i]!);
-  ltasPlot.setData([xf, yf]);
+function dispatchWorkerMessage(
+  msg: Exclude<WorkerOutMessage, { type: "batch" }>,
+): void {
+  if (!acceptWorkerStreamMessage(msg.type, active)) return;
+  if (msg.type === "status") statusEl.textContent = msg.message;
+  if (msg.type === "f0") updatePitchChart(msg.points);
+  if (msg.type === "metrics") setLatestMetrics(msg.metrics);
+  if (msg.type === "ltas") setLatestLtas({ freqs: msg.freqs, db: msg.db });
+  if (msg.type === "error") statusEl.textContent = `Ошибка: ${msg.message}`;
 }
 
 worker.onmessage = (ev: MessageEvent<WorkerOutMessage>) => {
   const msg = ev.data;
-  if (msg.type === "status") statusEl.textContent = msg.message;
-  if (msg.type === "f0") updatePitchChart(msg.points);
-  if (msg.type === "metrics") renderMetrics(msg.metrics);
-  if (msg.type === "ltas") updateLtas(msg.freqs, msg.db);
-  if (msg.type === "error") statusEl.textContent = `Ошибка: ${msg.message}`;
+  if (msg.type === "batch") {
+    for (const part of msg.messages) {
+      if (part.type === "batch") continue;
+      dispatchWorkerMessage(part);
+    }
+    return;
+  }
+  dispatchWorkerMessage(msg);
 };
 
 worker.onerror = (ev) => {
@@ -157,61 +275,61 @@ worker.onerror = (ev) => {
 };
 
 async function start(): Promise<void> {
+  clearChart();
+  active = false;
+
   stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
   });
   stream.getAudioTracks()[0]?.addEventListener("ended", () => stop());
 
   audioCtx = new AudioContext();
   await audioCtx.resume();
 
-  audioBuf = new Float32Array(4096);
-  const source = audioCtx.createMediaStreamSource(stream);
-  processor = audioCtx.createScriptProcessor(4096, 1, 1);
-  processor.onaudioprocess = (e) => {
-    const input = e.inputBuffer.getChannelData(0);
-    audioBuf!.set(input);
-    worker.postMessage(
-      { type: "audio", samples: audioBuf! },
-      [audioBuf!.buffer],
-    );
-    audioBuf = new Float32Array(4096);
+  await audioCtx.audioWorklet.addModule(
+    new URL("./audio/capture-processor.ts", import.meta.url),
+  );
+
+  worker.postMessage({ type: "start", sampleRate: audioCtx.sampleRate });
+  active = true;
+  startChartLoop();
+
+  captureNode = new AudioWorkletNode(audioCtx, "capture-processor", {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+  });
+  captureNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+    const samples = e.data;
+    worker.postMessage({ type: "audio", samples }, [samples.buffer]);
   };
+
+  const source = audioCtx.createMediaStreamSource(stream);
   const silent = audioCtx.createGain();
   silent.gain.value = 0;
-  source.connect(processor);
-  processor.connect(silent);
+  source.connect(captureNode);
+  captureNode.connect(silent);
   silent.connect(audioCtx.destination);
-  worker.postMessage({ type: "start", sampleRate: audioCtx.sampleRate });
   toggleBtn.textContent = "Стоп";
-  active = true;
 }
 
 function stop(): void {
   if (!active) return;
+  active = false;
   worker.postMessage({ type: "stop" });
-  processor?.disconnect();
-  processor = null;
+  captureNode?.port.close();
+  captureNode?.disconnect();
+  captureNode = null;
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
   void audioCtx?.close();
   audioCtx = null;
-  audioBuf = null;
   toggleBtn.textContent = "Начать";
-  active = false;
-  clearCharts();
-  renderMetrics({
-    when: "",
-    duration_s: 0,
-    sample_rate: 44100,
-    voiced_share: 0,
-    f0_median_hz: null,
-    vibrato: null,
-    h1_h2_db: null,
-    sf_balance_db: null,
-    spectral_centroid_hz: 0,
-    formants_hz: [],
-  });
+  clearChart();
 }
 
 toggleBtn.addEventListener("click", async () => {
@@ -223,25 +341,15 @@ toggleBtn.addEventListener("click", async () => {
     await start();
   } catch (err) {
     statusEl.textContent =
-      err instanceof Error ? err.message : "Не удалось получить доступ к микрофону";
+      err instanceof Error
+        ? err.message
+        : "Не удалось получить доступ к микрофону";
   }
 });
 
-window.addEventListener("resize", () => {
-  const w = app.clientWidth - 48;
-  pitchPlot.setSize({ width: w, height: 220 });
-  ltasPlot.setSize({ width: w, height: 220 });
-});
+function resizeChart(): void {
+  pitchPlot.setSize(chartSize());
+}
 
-renderMetrics({
-  when: "",
-  duration_s: 0,
-  sample_rate: 44100,
-  voiced_share: 0,
-  f0_median_hz: null,
-  vibrato: null,
-  h1_h2_db: null,
-  sf_balance_db: null,
-  spectral_centroid_hz: 0,
-  formants_hz: [],
-});
+new ResizeObserver(resizeChart).observe(pitchViewEl);
+resizeChart();

@@ -62,12 +62,22 @@ export function convolveSame(signal: Float64Array, kernel: Float64Array): Float6
   return out;
 }
 
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+export function hzToMidi(hz: number): number {
+  return 12 * Math.log2(hz / 440) + 69;
+}
+
+export function midiToNoteLabel(midi: number): string {
+  const idx = Math.round(midi);
+  if (idx < 0 || idx > 127) return "";
+  const note = NOTE_NAMES[((idx % 12) + 12) % 12]!;
+  return `${note}${Math.floor(idx / 12) - 1}`;
+}
+
 export function noteName(hz: number | null): string {
   if (!hz || hz <= 0) return "—";
-  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  const n = 12 * Math.log2(hz / 440) + 69;
-  const idx = Math.round(n);
+  const idx = Math.round(hzToMidi(hz));
   if (idx < 0 || idx > 127) return "—";
-  const note = names[idx % 12]!;
-  return `${note}${Math.floor(idx / 12) - 1}`;
+  return midiToNoteLabel(idx);
 }
