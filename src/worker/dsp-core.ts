@@ -1,111 +1,171 @@
-import { BUFFER_SECONDS, METRICS_INTERVAL_MS } from "../dsp/constants.ts";
-import { F0Tracker } from "../dsp/f0.ts";
+import {
+  BASELINE_INTERVAL_MS,
+  ENABLE_LIVE_METRICS,
+  METRICS_ANALYSIS_SEC,
+  METRICS_INTERVAL_MS,
+  TRACKER_BUFFER_SEC,
+} from "../dsp/constants.ts";
 import { analyseBuffer } from "../dsp/analyse.ts";
+import { F0Tracker } from "../dsp/f0.ts";
+import {
+  appendAudioRing,
+  createAudioRing,
+  resetAudioRing,
+  ringTail,
+  type AudioRing,
+} from "../ui/audio-ring.ts";
+import {
+  centsReferenceHz,
+  clearHudBaseline,
+  ingestVoicedFrames,
+} from "../ui/session.ts";
 import type { F0Point, WorkerInMessage, WorkerOutMessage } from "../types.ts";
 
 export interface WorkerState {
   rate: number;
   tracker: F0Tracker | null;
-  buffer: Float64Array;
+  ring: AudioRing;
   running: boolean;
+  lastBaselineAt: number;
   lastMetricsAt: number;
-  chartMedianHz: number;
+  hudBaselineHz: number;
+  recentVoicedHz: number[];
 }
 
 export function createWorkerState(): WorkerState {
   return {
     rate: 44100,
     tracker: null,
-    buffer: new Float64Array(0),
+    ring: createAudioRing(44100),
     running: false,
+    lastBaselineAt: 0,
     lastMetricsAt: 0,
-    chartMedianHz: 0,
+    hudBaselineHz: 0,
+    recentVoicedHz: [],
   };
 }
 
-export function appendBuffer(state: WorkerState, samples: Float32Array): number {
-  const merged = new Float64Array(state.buffer.length + samples.length);
-  merged.set(state.buffer);
-  for (let i = 0; i < samples.length; i++) merged[state.buffer.length + i] = samples[i]!;
-  state.buffer = merged;
+export function resetWorkerSession(state: WorkerState): void {
+  state.tracker = null;
+  resetAudioRing(state.ring);
+  state.running = false;
+  clearHudBaseline(state);
+  state.lastBaselineAt = 0;
+  state.lastMetricsAt = 0;
+}
 
-  const maxSamples = state.rate * BUFFER_SECONDS;
-  if (state.buffer.length <= maxSamples) return 0;
+export function shouldEmitMetrics(state: WorkerState, now: number): boolean {
+  if (!ENABLE_LIVE_METRICS) return false;
+  if (now - state.lastMetricsAt < METRICS_INTERVAL_MS) return false;
+  return state.ring.length >= state.rate / 2;
+}
 
-  const drop = state.buffer.length - maxSamples;
-  const hop = Math.floor(0.005 * state.rate);
-  const alignedDrop = Math.floor(drop / hop) * hop;
-  state.buffer = state.buffer.slice(alignedDrop);
-  return Math.floor(alignedDrop / hop);
+export function maybeEmitMetrics(
+  state: WorkerState,
+  now: number,
+): WorkerOutMessage[] {
+  if (!shouldEmitMetrics(state, now)) return [];
+  return emitMetricsNow(state, now);
+}
+
+export function emitMetricsNow(
+  state: WorkerState,
+  now: number,
+): WorkerOutMessage[] {
+  const out: WorkerOutMessage[] = [];
+  state.lastMetricsAt = now;
+  try {
+    const tailSamples = Math.min(
+      state.ring.length,
+      state.rate * METRICS_ANALYSIS_SEC,
+    );
+    const audio = ringTail(state.ring, tailSamples);
+    const { metrics, ltas } = analyseBuffer(audio, state.rate);
+    out.push({ type: "metrics", metrics });
+    if (ltas) {
+      out.push({
+        type: "ltas",
+        freqs: Array.from(ltas.freqs),
+        db: Array.from(ltas.db),
+      });
+    }
+  } catch (err) {
+    out.push({
+      type: "error",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return out;
 }
 
 export function handleWorkerMessage(
   state: WorkerState,
   msg: WorkerInMessage,
   now?: number,
+  options?: { syncMetrics?: boolean },
 ): WorkerOutMessage[] {
   const out: WorkerOutMessage[] = [];
+  const syncMetrics = options?.syncMetrics ?? true;
 
   if (msg.type === "start") {
+    resetWorkerSession(state);
     state.rate = msg.sampleRate;
-    state.tracker = new F0Tracker(state.rate);
-    state.buffer = new Float64Array(0);
-    state.chartMedianHz = 0;
+    state.ring = createAudioRing(state.rate);
+    state.tracker = new F0Tracker(state.rate, TRACKER_BUFFER_SEC);
     state.running = true;
-    state.lastMetricsAt = now ?? performance.now();
+    const t = now ?? performance.now();
+    state.lastBaselineAt = t;
+    state.lastMetricsAt = t;
     out.push({ type: "status", message: "Слушаю микрофон…" });
     return out;
   }
 
   if (msg.type === "stop") {
-    state.running = false;
+    resetWorkerSession(state);
     out.push({ type: "status", message: "Остановлено" });
     return out;
   }
 
   if (msg.type !== "audio" || !state.running || !state.tracker) return out;
 
-  const droppedFrames = appendBuffer(state, msg.samples);
-  state.tracker.syncBuffer(state.buffer, droppedFrames, msg.samples.length);
-  const newFrames = state.tracker.append();
-  if (newFrames.length === 0) return out;
+  appendAudioRing(state.ring, msg.samples, state.rate);
+  state.tracker.pushSamples(msg.samples);
+  const clock = now ?? performance.now();
+  const metricsOut = syncMetrics ? maybeEmitMetrics(state, clock) : [];
 
-  const med = state.chartMedianHz;
+  const newFrames = state.tracker.append();
+  if (newFrames.length === 0) return metricsOut;
+
+  const voicedHz = newFrames
+    .filter((f) => f.voiced && f.f0 > 0)
+    .map((f) => f.f0);
+  ingestVoicedFrames(state, voicedHz);
+
+  if (clock - state.lastBaselineAt >= BASELINE_INTERVAL_MS) {
+    state.lastBaselineAt = clock;
+  }
+
   const outPoints: F0Point[] = [];
   for (const frame of newFrames) {
-    const baseline = med || frame.f0 || 1;
+    const ref = centsReferenceHz(state, frame.f0, frame.voiced);
     outPoints.push({
       t: frame.t,
-      cents: frame.voiced ? 1200 * Math.log2(frame.f0 / baseline) : NaN,
+      f0_hz: frame.f0,
+      cents: frame.voiced ? 1200 * Math.log2(frame.f0 / ref) : NaN,
       voiced: frame.voiced,
     });
   }
   out.push({ type: "f0", points: outPoints });
-
-  const metricsNow = now ?? performance.now();
-  if (
-    metricsNow - state.lastMetricsAt >= METRICS_INTERVAL_MS &&
-    state.buffer.length >= state.rate / 2
-  ) {
-    state.lastMetricsAt = metricsNow;
-    try {
-      const { metrics, ltas } = analyseBuffer(state.buffer, state.rate);
-      if (metrics.f0_median_hz) state.chartMedianHz = metrics.f0_median_hz;
-      out.push({ type: "metrics", metrics });
-      if (ltas) {
-        out.push({
-          type: "ltas",
-          freqs: Array.from(ltas.freqs),
-          db: Array.from(ltas.db),
-        });
-      }
-    } catch (err) {
-      out.push({
-        type: "error",
-        message: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  out.push(...metricsOut);
 
   return out;
 }
+
+export {
+  clearHudBaseline,
+  ingestVoicedFrames,
+  pushRecentVoiced,
+  refreshHudBaseline,
+} from "../ui/session.ts";
+
+export { appendAudioRing as appendBuffer } from "../ui/audio-ring.ts";

@@ -52,6 +52,24 @@ function pickLag(acf: Float64Array, lagMin: number, lagMax: number, rel = 0.9): 
   return lag;
 }
 
+/** If pickLag locked on a high harmonic, fold down to the fundamental. */
+export function foldToFundamental(
+  acf: Float64Array,
+  lag: number,
+  lagMax: number,
+  rate: number,
+  rel = 0.9,
+): number {
+  let folded = lag;
+  const hi = Math.min(lagMax, acf.length - 2);
+  while (rate / folded > 650 && folded * 2 <= hi) {
+    const doubled = Math.round(folded * 2);
+    if (acf[doubled]! >= rel * acf[Math.round(folded)]!) folded = doubled;
+    else break;
+  }
+  return folded;
+}
+
 function windowAcf(window: Float64Array, nFft: number, lagMax: number): Float64Array {
   const spec = rfft(window, nFft);
   const power = magnitudeSquared(spec);
@@ -156,6 +174,8 @@ function medianOf(values: number[]): number {
     : sorted[mid]!;
 }
 
+const F0_MEDIAN_WIN = 3;
+
 /** Incremental pitch tracker for live input. */
 export class F0Tracker {
   private readonly frame: number;
@@ -164,15 +184,22 @@ export class F0Tracker {
   private readonly lagMax: number;
   private readonly window: Float64Array;
   private readonly nFft: number;
+  private readonly nHalf: number;
   private readonly acfW: Float64Array;
   private readonly seg: Float64Array;
-  private buffer = new Float64Array(0);
+  private readonly acf: Float64Array;
+  private readonly acfSpecIm: Float64Array;
+  private readonly store: Float64Array;
+  private readonly maxSamples: number;
+  private buffer: Float64Array<ArrayBufferLike> = new Float64Array(0);
+  private storeLen = 0;
   private nextFrame = 0;
   private rmsAll = 1e-12;
   private elapsedSamples = 0;
+  private voicedSmooth: number[] = [];
   private readonly rate: number;
 
-  constructor(rate: number) {
+  constructor(rate: number, maxBufferSec = 15) {
     this.rate = rate;
     this.frame = Math.floor(FRAME_SEC * rate);
     this.hop = Math.floor(HOP_SEC * rate);
@@ -180,15 +207,47 @@ export class F0Tracker {
     this.lagMax = Math.min(Math.floor(this.frame / 2), Math.floor(rate / F0_MIN));
     this.window = hanning(this.frame);
     this.nFft = nFftForFrame(this.frame);
+    this.nHalf = (this.nFft >> 1) + 1;
     this.acfW = windowAcf(this.window, this.nFft, this.lagMax);
     this.seg = new Float64Array(this.frame);
+    this.acf = new Float64Array(this.lagMax + 2);
+    this.acfSpecIm = new Float64Array(this.nHalf);
+    this.maxSamples = Math.floor(rate * maxBufferSec);
+    this.store = new Float64Array(this.maxSamples);
   }
 
   reset(): void {
     this.buffer = new Float64Array(0);
+    this.storeLen = 0;
     this.nextFrame = 0;
     this.rmsAll = 1e-12;
     this.elapsedSamples = 0;
+    this.voicedSmooth = [];
+  }
+
+  /** Append live mic chunk into a linear rolling buffer (production path). */
+  pushSamples(samples: Float32Array): void {
+    let overflow = this.storeLen + samples.length - this.maxSamples;
+    if (overflow > 0 && this.hop > 0) {
+      const drop = Math.min(
+        this.storeLen,
+        Math.ceil(overflow / this.hop) * this.hop,
+      );
+      if (drop > 0) {
+        this.store.copyWithin(0, drop, this.storeLen);
+        this.storeLen -= drop;
+        this.nextFrame = Math.max(0, this.nextFrame - Math.floor(drop / this.hop));
+      }
+    }
+    this.store.set(samples, this.storeLen);
+    this.storeLen += samples.length;
+    this.elapsedSamples += samples.length;
+    this.buffer = this.store.subarray(0, this.storeLen);
+    const maxFrame = Math.max(
+      0,
+      Math.floor((this.buffer.length - this.frame) / this.hop) + 1,
+    );
+    if (this.nextFrame > maxFrame) this.nextFrame = maxFrame;
   }
 
   /** Process frames not yet extracted from the buffer set by syncBuffer(). */
@@ -211,6 +270,7 @@ export class F0Tracker {
       const streamSample = this.elapsedSamples - this.buffer.length + start + this.frame / 2;
       const t = streamSample / this.rate;
       if (energy < 0.1 * this.rmsAll) {
+        this.voicedSmooth = [];
         out.push({ t, f0: 0, voiced: false });
         this.nextFrame++;
         continue;
@@ -218,22 +278,29 @@ export class F0Tracker {
 
       const spec = rfft(this.seg, this.nFft);
       const power = magnitudeSquared(spec);
-      const acfSpec: Spectrum = { re: power, im: new Float64Array(power.length) };
+      this.acfSpecIm.fill(0);
+      const acfSpec: Spectrum = { re: power, im: this.acfSpecIm };
       const acfFull = irfft(acfSpec, this.nFft);
-      const acf = new Float64Array(this.lagMax + 2);
       if (acfFull[0]! <= 0) {
+        this.voicedSmooth = [];
         out.push({ t, f0: 0, voiced: false });
         this.nextFrame++;
         continue;
       }
-      for (let k = 0; k < acf.length; k++) {
-        acf[k] = acfFull[k]! / acfFull[0]! / Math.max(this.acfW[k]!, 0.1);
+      for (let k = 0; k < this.acf.length; k++) {
+        this.acf[k] = acfFull[k]! / acfFull[0]! / Math.max(this.acfW[k]!, 0.1);
       }
-      const lag = pickLag(acf, this.lagMin, this.lagMax);
-      if (lag === null || acf[Math.round(lag)]! < 0.35) {
+      let lag = pickLag(this.acf, this.lagMin, this.lagMax);
+      if (lag !== null) lag = foldToFundamental(this.acf, lag, this.lagMax, this.rate);
+      if (lag === null || this.acf[Math.round(lag)]! < 0.35) {
+        this.voicedSmooth = [];
         out.push({ t, f0: 0, voiced: false });
       } else {
-        out.push({ t, f0: this.rate / lag, voiced: true });
+        const raw = this.rate / lag;
+        this.voicedSmooth.push(raw);
+        if (this.voicedSmooth.length > F0_MEDIAN_WIN) this.voicedSmooth.shift();
+        const f0 = medianOf(this.voicedSmooth);
+        out.push({ t, f0, voiced: true });
       }
       this.nextFrame++;
     }
@@ -243,7 +310,7 @@ export class F0Tracker {
   /** Call after each audio chunk: sync buffer, adjust frame index, count new samples. */
   syncBuffer(audio: Float64Array, droppedFrames = 0, newSamples = 0): void {
     if (newSamples > 0) this.elapsedSamples += newSamples;
-    this.buffer = audio.slice();
+    this.buffer = audio;
     if (droppedFrames > 0) {
       this.nextFrame = Math.max(0, this.nextFrame - droppedFrames);
     }

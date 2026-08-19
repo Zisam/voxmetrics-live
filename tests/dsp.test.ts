@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { trackF0, longestVoicedRun, f0ToCents, F0Tracker } from "../src/dsp/f0.ts";
+import { trackF0, longestVoicedRun, f0ToCents, F0Tracker, foldToFundamental } from "../src/dsp/f0.ts";
 import { analyseVibrato } from "../src/dsp/vibrato.ts";
 import { analyseBuffer } from "../src/dsp/analyse.ts";
 import { noteName } from "../src/dsp/math.ts";
@@ -30,6 +30,20 @@ describe("trackF0", () => {
     expect(med).toBeLessThan(445);
   });
 
+  it("tracks fundamental when H2 dominates (weak H1)", () => {
+    const weakF0: [number, number][] = [
+      [1, 0.12],
+      [2, 0.9],
+      [3, 0.35],
+      [4, 0.15],
+    ];
+    const sig = synth(0, 0, 220, 2, weakF0);
+    const { f0, voiced } = trackF0(sig, RATE);
+    const med = medianVoicedF0(f0, voiced);
+    expect(med).toBeGreaterThan(210);
+    expect(med).toBeLessThan(230);
+  });
+
   it("throws on buffer shorter than analysis window", () => {
     expect(() => trackF0(new Float64Array(100), RATE)).toThrow(/короче окна/);
   });
@@ -58,7 +72,41 @@ describe("f0ToCents", () => {
   });
 });
 
+describe("foldToFundamental", () => {
+  it("folds octave harmonic to fundamental", () => {
+    const acf = new Float64Array(200);
+    acf.fill(0.1);
+    acf[0] = 1;
+    acf[50] = 0.96;
+    acf[100] = 0.94;
+    expect(foldToFundamental(acf, 50, 150, 44100)).toBeGreaterThan(95);
+    expect(foldToFundamental(acf, 50, 150, 44100)).toBeLessThan(105);
+    expect(foldToFundamental(acf, 100, 150, 44100)).toBeGreaterThan(95);
+    expect(foldToFundamental(acf, 100, 150, 44100)).toBeLessThan(105);
+  });
+});
+
 describe("F0Tracker", () => {
+  it("matches offline trackF0 via pushSamples streaming", () => {
+    const sig = synth(0, 0, 440, 2);
+    const offline = trackF0(sig, RATE);
+    const tracker = new F0Tracker(RATE, 2);
+    const streamed: number[] = [];
+    const chunk = 4096;
+    for (let i = 0; i < sig.length; i += chunk) {
+      const part = sig.subarray(i, Math.min(i + chunk, sig.length));
+      tracker.pushSamples(Float32Array.from(part));
+      for (const frame of tracker.append()) {
+        if (frame.voiced) streamed.push(frame.f0);
+      }
+    }
+    streamed.sort((a, b) => a - b);
+    const offMed = medianVoicedF0(offline.f0, offline.voiced);
+    const streamMed = streamed[Math.floor(streamed.length / 2)]!;
+    expect(streamMed).toBeGreaterThan(offMed - 2);
+    expect(streamMed).toBeLessThan(offMed + 2);
+  });
+
   it("matches offline trackF0 on streaming chunks", () => {
     const sig = synth(0, 0, 440, 2);
     const offline = trackF0(sig, RATE);

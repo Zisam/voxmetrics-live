@@ -23,6 +23,7 @@ export interface MetricsSnapshot {
 
 export interface F0Point {
   t: number;
+  f0_hz: number;
   cents: number;
   voiced: boolean;
 }
@@ -32,7 +33,8 @@ export type WorkerOutMessage =
   | { type: "metrics"; metrics: MetricsSnapshot }
   | { type: "ltas"; freqs: number[]; db: number[] }
   | { type: "status"; message: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "batch"; messages: WorkerOutMessage[] };
 
 export type WorkerInMessage =
   | { type: "start"; sampleRate: number }

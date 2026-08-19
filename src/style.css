@@ -1,6 +1,6 @@
 :root {
   color: #e8e6e3;
-  background: #12141a;
+  background: #0d0f14;
   font-family: "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;
 }
@@ -9,33 +9,46 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 #app {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 1.5rem 1rem 2rem;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  background: #12141a;
+  border-bottom: 1px solid #1e2230;
+  flex-shrink: 0;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  min-width: 0;
 }
 
 header h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.6rem;
+  margin: 0;
+  font-size: 1.1rem;
   font-weight: 600;
-}
-
-.subtitle {
-  margin: 0 0 1.25rem;
-  color: #9aa0a6;
-  font-size: 0.95rem;
-}
-
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
+  white-space: nowrap;
 }
 
 button {
@@ -43,9 +56,10 @@ button {
   color: #fff;
   border: none;
   border-radius: 8px;
-  padding: 0.55rem 1.2rem;
-  font-size: 1rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.95rem;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 button:hover {
@@ -54,66 +68,66 @@ button:hover {
 
 .status {
   color: #9aa0a6;
-  font-size: 0.9rem;
-}
-
-.charts {
-  display: grid;
-  gap: 1rem;
-}
-
-.panel {
-  background: #1a1d26;
-  border-radius: 12px;
-  padding: 0.75rem 1rem 1rem;
-}
-
-.panel h2 {
-  margin: 0 0 0.5rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: #b0b5bd;
-}
-
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 0.75rem;
-  margin-top: 1.25rem;
-}
-
-.card {
-  background: #1a1d26;
-  border-radius: 10px;
-  padding: 0.75rem 0.9rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.card.wide {
-  grid-column: 1 / -1;
-}
-
-.label {
-  font-size: 0.78rem;
-  color: #8b9199;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.value {
-  font-size: 1rem;
-  font-variant-numeric: tabular-nums;
-}
-
-footer {
-  margin-top: 2rem;
-  color: #6b7280;
   font-size: 0.85rem;
 }
 
-footer a {
+.privacy {
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+
+.hud {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.hud-note {
+  font-size: 1.6rem;
+  font-weight: 600;
+  min-width: 3.5rem;
+  text-align: right;
+}
+
+.hud-cents {
+  font-size: 1rem;
+  color: #b0b5bd;
+  min-width: 4rem;
+}
+
+.hud-cents.in-tune {
+  color: #6ee7b7;
+}
+
+.hud-hz {
+  font-size: 0.9rem;
+  color: #8b9199;
+}
+
+.pitch-view {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #0d0f14;
+}
+
+#pitch-chart {
+  width: 100%;
+  height: 100%;
+}
+
+.footer {
+  flex-shrink: 0;
+  padding: 0.35rem 1rem;
+  color: #6b7280;
+  font-size: 0.78rem;
+  background: #12141a;
+  border-top: 1px solid #1e2230;
+}
+
+.footer a {
   color: #5b8def;
 }
 
@@ -123,4 +137,31 @@ footer a {
 
 .uplot .u-title {
   display: none;
+}
+
+.uplot .u-over {
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .hud {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  header h1 {
+    font-size: 1rem;
+  }
+
+  .privacy {
+    width: 100%;
+  }
+
+  .hud-note {
+    font-size: 1.35rem;
+  }
 }
