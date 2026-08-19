@@ -75,55 +75,65 @@ export function selectFormants(
 function polyRoots(coeffs: Float64Array): { re: number; im: number }[] {
   const n = coeffs.length - 1;
   if (n <= 0) return [];
+
   const c = new Float64Array(n + 1);
   for (let i = 0; i <= n; i++) c[i] = coeffs[i]! / coeffs[0]!;
 
-  const companion = Array.from({ length: n }, () => new Float64Array(n));
-  for (let i = 0; i < n - 1; i++) companion[i][i + 1] = 1;
-  for (let i = 0; i < n; i++) companion[n - 1][i] = -c[n - i]!;
-
-  let re = companion.map((row) => row.slice());
-  let im = Array.from({ length: n }, () => new Float64Array(n));
-  for (let iter = 0; iter < 200; iter++) {
-    let maxOff = 0;
-    for (let p = 0; p < n - 1; p++) {
-      let colMax = 0;
-      for (let i = p; i < n; i++) colMax = Math.max(colMax, Math.abs(re[i]![p]!));
-      if (colMax === 0) continue;
-      let pivot = p;
-      for (let i = p + 1; i < n; i++) {
-        if (Math.abs(re[i]![p]!) > Math.abs(re[pivot]![p]!)) pivot = i;
-      }
-      if (pivot !== p) {
-        [re[p], re[pivot]] = [re[pivot]!, re[p]!];
-        [im[p], im[pivot]] = [im[pivot]!, im[p]!];
-      }
-      const xRe = re[p]![p]!;
-      const xIm = im[p]![p]!;
-      const mag2 = xRe * xRe + xIm * xIm || 1e-20;
-      for (let j = p; j < n; j++) {
-        const numRe = re[p]![j]! * xRe + im[p]![j]! * xIm;
-        const numIm = im[p]![j]! * xRe - re[p]![j]! * xIm;
-        re[p]![j] = numRe / mag2;
-        im[p]![j] = numIm / mag2;
-      }
-      for (let i = 0; i < n; i++) {
-        if (i === p) continue;
-        const factorRe = re[i]![p]!;
-        const factorIm = im[i]![p]!;
-        for (let j = p; j < n; j++) {
-          re[i]![j] -= factorRe * re[p]![j]! - factorIm * im[p]![j]!;
-          im[i]![j] -= factorRe * im[p]![j]! + factorIm * re[p]![j]!;
-        }
-      }
-      maxOff = Math.max(maxOff, Math.abs(im[p]![p]!));
-    }
-    if (maxOff < 1e-10) break;
+  type Cplx = { re: number; im: number };
+  const roots: Cplx[] = [];
+  for (let k = 0; k < n; k++) {
+    const ang = (2 * Math.PI * (k + 0.25)) / n;
+    roots.push({ re: 0.85 * Math.cos(ang), im: 0.85 * Math.sin(ang) });
   }
 
-  const roots: { re: number; im: number }[] = [];
-  for (let i = 0; i < n; i++) roots.push({ re: re[i]![i]!, im: im[i]![i]! });
+  const evalAt = (z: Cplx): Cplx => {
+    let re = c[n]!;
+    let im = 0;
+    for (let k = n - 1; k >= 0; k--) {
+      const newRe = re * z.re - im * z.im + c[k]!;
+      const newIm = re * z.im + im * z.re;
+      re = newRe;
+      im = newIm;
+    }
+    return { re, im };
+  };
+
+  const div = (a: Cplx, b: Cplx): Cplx => {
+    const d = b.re * b.re + b.im * b.im || 1e-30;
+    return { re: (a.re * b.re + a.im * b.im) / d, im: (a.im * b.re - a.re * b.im) / d };
+  };
+
+  for (let iter = 0; iter < 80; iter++) {
+    let maxDelta = 0;
+    const next: Cplx[] = [];
+    for (let i = 0; i < n; i++) {
+      const z = roots[i]!;
+      const p = evalAt(z);
+      let denom: Cplx = { re: 1, im: 0 };
+      for (let j = 0; j < n; j++) {
+        if (j === i) continue;
+        const diff = roots[j]!;
+        denom = {
+          re: denom.re * (z.re - diff.re) - denom.im * (z.im - diff.im),
+          im: denom.re * (z.im - diff.im) + denom.im * (z.re - diff.re),
+        };
+      }
+      const mag2 = denom.re * denom.re + denom.im * denom.im;
+      const delta = mag2 < 1e-30 ? { re: 0, im: 0 } : div(p, denom);
+      const upd = { re: z.re - delta.re, im: z.im - delta.im };
+      next.push(upd);
+      maxDelta = Math.max(maxDelta, Math.hypot(upd.re - z.re, upd.im - z.im));
+    }
+    for (let i = 0; i < n; i++) roots[i] = next[i]!;
+    if (maxDelta < 1e-10) break;
+  }
+
   return roots;
+}
+
+/** Exported for unit tests. */
+export function findPolyRoots(coeffs: Float64Array): { re: number; im: number }[] {
+  return polyRoots(coeffs);
 }
 
 function correlate(seg: Float64Array, order: number): Float64Array {

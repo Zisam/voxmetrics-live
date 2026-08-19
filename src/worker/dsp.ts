@@ -52,8 +52,8 @@ self.onmessage = (ev: MessageEvent<WorkerInMessage>) => {
   if (msg.type !== "audio" || !running || !tracker) return;
 
   const droppedFrames = appendBuffer(msg.samples);
-  tracker.syncBuffer(buffer, droppedFrames);
-  const newFrames = tracker.append(msg.samples);
+  tracker.syncBuffer(buffer, droppedFrames, msg.samples.length);
+  const newFrames = tracker.append();
   if (newFrames.length === 0) return;
 
   const med = chartMedianHz;

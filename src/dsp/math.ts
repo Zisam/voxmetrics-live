@@ -67,5 +67,7 @@ export function noteName(hz: number | null): string {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const n = 12 * Math.log2(hz / 440) + 69;
   const idx = Math.round(n);
-  return `${names[idx % 12]}${Math.floor(idx / 12) - 1}`;
+  if (idx < 0 || idx > 127) return "—";
+  const note = names[idx % 12]!;
+  return `${note}${Math.floor(idx / 12) - 1}`;
 }
