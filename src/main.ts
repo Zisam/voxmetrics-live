@@ -4,6 +4,7 @@ import "uplot/dist/uPlot.min.css";
 import type { F0Point, WorkerOutMessage } from "./types.ts";
 import { midiToNoteLabel } from "./dsp/math.ts";
 import { createNotch } from "./dsp/notch.ts";
+import { createGate, type NoiseGate } from "./dsp/gate.ts";
 import {
   appendScrollingPitchPoints,
   clearPitchSeries,
@@ -35,6 +36,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <option value="right">Микрофон (R)</option>
         <option value="left">Гитара (L)</option>
       </select>
+      <label class="gate-control" title="Порог шумоподавления (RMS, дБFS)">
+        <span class="gate-label">Гейт</span>
+        <input type="range" id="gate" min="-90" max="-20" step="1" value="-50" />
+        <span class="gate-value" id="gate-value">-50 дБ</span>
+      </label>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
     </div>
@@ -59,6 +65,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 const toggleBtn = document.querySelector<HTMLButtonElement>("#toggle")!;
 const channelSelectEl =
   document.querySelector<HTMLSelectElement>("#channel")!;
+const gateSliderEl = document.querySelector<HTMLInputElement>("#gate")!;
+const gateValueEl = document.querySelector<HTMLSpanElement>("#gate-value")!;
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
 const currentNoteEl = document.querySelector<HTMLSpanElement>("#current-note")!;
 const currentCentsEl = document.querySelector<HTMLSpanElement>("#current-cents")!;
@@ -83,6 +91,7 @@ let stream: MediaStream | null = null;
 let active = false;
 let starting = false;
 let notch: ((x: Float32Array) => Float32Array) | null = null;
+let gate: NoiseGate | null = null;
 
 type Channel = "left" | "right";
 
@@ -101,6 +110,23 @@ function applyChannelSelection(): void {
 }
 
 channelSelectEl.addEventListener("change", applyChannelSelection);
+
+function storedGateDb(): number {
+  const v = Number.parseFloat(localStorage.getItem("voxmetrics.gate") ?? "");
+  if (!Number.isFinite(v)) return -50;
+  return Math.min(-20, Math.max(-90, v));
+}
+
+function applyGateThreshold(): void {
+  const db = Number.parseFloat(gateSliderEl.value);
+  localStorage.setItem("voxmetrics.gate", String(db));
+  gateValueEl.textContent = `${db} дБ`;
+  gate?.setThresholdDb(db);
+}
+
+gateSliderEl.value = String(storedGateDb());
+gateSliderEl.addEventListener("input", applyGateThreshold);
+applyGateThreshold();
 
 const pitchX: number[] = [];
 const pitchMidi: (number | null)[] = [];
@@ -315,6 +341,7 @@ function releasePartialStart(): void {
   captureNode?.disconnect();
   captureNode = null;
   notch = null;
+  gate = null;
   dspWorker.postMessage({ type: "stop" });
   analyserWorker.postMessage({ type: "stop" });
   stopChartLoop();
@@ -359,9 +386,10 @@ async function start(): Promise<void> {
       });
       captureNode.port.postMessage({ type: "channel", value: storedChannel() });
       notch = createNotch(50, audioCtx.sampleRate);
+      gate = createGate(audioCtx.sampleRate, storedGateDb());
       captureNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
-        if (!notch) return;
-        const samples = notch(e.data);
+        if (!notch || !gate) return;
+        const samples = gate.process(notch(e.data));
         const copy = samples.slice();
         dspWorker.postMessage({ type: "audio", samples }, [samples.buffer]);
         analyserWorker.postMessage({ type: "audio", samples: copy }, [copy.buffer]);
@@ -391,6 +419,7 @@ function stop(): void {
   if (!active) return;
   active = false;
   notch = null;
+  gate = null;
   dspWorker.postMessage({ type: "stop" });
   analyserWorker.postMessage({ type: "stop" });
   captureNode?.port.close();
