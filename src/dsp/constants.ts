@@ -10,6 +10,8 @@ export const VIB_MIN_EXTENT = 20.0;
 export const VIB_MIN_PROMINENCE = 3.0;
 export const SF_BAND: readonly [number, number] = [2200.0, 3400.0];
 export const REF_BAND: readonly [number, number] = [300.0, 1000.0];
+/** Singer's-formant cluster (Hz) — shared by DSP measurement and UI text. */
+export const SINGER_FORMANT_CLUSTER: readonly [number, number] = [2400, 3200];
 export const FORMANT_MAX_BW = 500.0;
 export const FORMANT_MERGE_HZ = 200.0;
 export const BUFFER_SECONDS = 15;

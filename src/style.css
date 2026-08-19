@@ -200,6 +200,51 @@ button:hover {
   color: #8b9199;
 }
 
+.mstack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+
+.mref {
+  font-size: 0.68rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.mlegend {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.mchip {
+  font-size: 0.7rem;
+  line-height: 1.4;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.mchip.q-good {
+  color: #6ee7b7;
+  background: rgba(110, 231, 183, 0.08);
+  border-color: rgba(110, 231, 183, 0.25);
+}
+
+.mchip.q-ok {
+  color: #9db4f5;
+  background: rgba(157, 180, 245, 0.08);
+  border-color: rgba(157, 180, 245, 0.25);
+}
+
+.mchip.q-warn {
+  color: #f0a35e;
+  background: rgba(240, 163, 94, 0.08);
+  border-color: rgba(240, 163, 94, 0.25);
+}
+
 .mval {
   font-variant-numeric: tabular-nums;
   color: #e8e6e3;

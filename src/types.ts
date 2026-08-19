@@ -19,6 +19,8 @@ export interface MetricsSnapshot {
   sf_balance_db: number | null;
   spectral_centroid_hz: number;
   formants_hz: number[];
+  singer_formant_hz: number | null;
+  singer_formant_db: number | null;
 }
 
 export interface F0Point {
