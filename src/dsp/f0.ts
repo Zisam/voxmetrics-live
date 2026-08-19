@@ -191,9 +191,8 @@ export class F0Tracker {
     this.elapsedSamples = 0;
   }
 
-  append(samples: Float32Array | Float64Array): { t: number; f0: number; voiced: boolean }[] {
-    this.elapsedSamples += samples.length;
-
+  /** Process frames not yet extracted from the buffer set by syncBuffer(). */
+  append(): { t: number; f0: number; voiced: boolean }[] {
     let energySum = 0;
     for (let i = 0; i < this.buffer.length; i++) energySum += this.buffer[i]! * this.buffer[i]!;
     this.rmsAll = Math.sqrt(energySum / this.buffer.length) || 1e-12;
@@ -241,7 +240,9 @@ export class F0Tracker {
     return out;
   }
 
-  syncBuffer(audio: Float64Array, droppedFrames = 0): void {
+  /** Call after each audio chunk: sync buffer, adjust frame index, count new samples. */
+  syncBuffer(audio: Float64Array, droppedFrames = 0, newSamples = 0): void {
+    if (newSamples > 0) this.elapsedSamples += newSamples;
     this.buffer = audio.slice();
     if (droppedFrames > 0) {
       this.nextFrame = Math.max(0, this.nextFrame - droppedFrames);

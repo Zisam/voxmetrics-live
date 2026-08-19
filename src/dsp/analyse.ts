@@ -8,6 +8,7 @@ import {
   computeLtas,
   spectralCentroid,
 } from "./ltas.ts";
+import { REF_BAND, SF_BAND } from "./constants.ts";
 
 export interface AnalyseOutput {
   metrics: MetricsSnapshot;
@@ -40,12 +41,18 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
     try {
       const result = computeLtas(x, rate);
       ltas = result;
-      const sf = bandMeanDb(result.freqs, result.db, 2200, 3400);
-      const ref = bandMeanDb(result.freqs, result.db, 300, 1000);
+      const sf = bandMeanDb(result.freqs, result.db, SF_BAND[0], SF_BAND[1]);
+      const ref = bandMeanDb(result.freqs, result.db, REF_BAND[0], REF_BAND[1]);
       sfBalance = sf !== null && ref !== null ? Math.round((sf - ref) * 100) / 100 : null;
       centroid = spectralCentroid(result.freqs, result.db);
-    } catch {
-      /* buffer too short or silent */
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        !message.includes("короче") &&
+        message !== "не нашёл озвученных участков"
+      ) {
+        throw err;
+      }
     }
   }
 
