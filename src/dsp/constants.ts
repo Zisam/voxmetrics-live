@@ -1,0 +1,16 @@
+export const F0_MIN = 45.0;
+export const F0_MAX = 1400.0;
+export const FRAME_SEC = 0.05;
+export const HOP_SEC = 0.005;
+export const VIB_MIN = 2.0;
+export const VIB_MAX = 12.0;
+export const VIB_MIN_SECONDS = 1.0;
+export const VIB_TRUSTED_SECONDS = 4.0;
+export const VIB_MIN_EXTENT = 20.0;
+export const VIB_MIN_PROMINENCE = 3.0;
+export const SF_BAND: readonly [number, number] = [2200.0, 3400.0];
+export const REF_BAND: readonly [number, number] = [300.0, 1000.0];
+export const FORMANT_MAX_BW = 500.0;
+export const FORMANT_MERGE_HZ = 200.0;
+export const BUFFER_SECONDS = 15;
+export const METRICS_INTERVAL_MS = 1000;
