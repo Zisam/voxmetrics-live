@@ -77,6 +77,29 @@ button:hover {
   flex-shrink: 0;
 }
 
+.gate-control {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: #8b9199;
+  white-space: nowrap;
+}
+
+.gate-control input[type="range"] {
+  width: 110px;
+  accent-color: #5b8def;
+  cursor: pointer;
+}
+
+.gate-value {
+  font-variant-numeric: tabular-nums;
+  color: #b0b5bd;
+  min-width: 3.6rem;
+  text-align: right;
+}
+
 .status {
   color: #9aa0a6;
   font-size: 0.85rem;
