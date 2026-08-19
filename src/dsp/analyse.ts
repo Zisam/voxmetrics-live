@@ -6,6 +6,7 @@ import { analyseFormants } from "./formants.ts";
 import {
   bandMeanDb,
   computeLtas,
+  singerFormant,
   spectralCentroid,
 } from "./ltas.ts";
 import { REF_BAND, SF_BAND } from "./constants.ts";
@@ -37,6 +38,7 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
   let ltas: { freqs: Float64Array; db: Float64Array } | null = null;
   let sfBalance: number | null = null;
   let centroid = 0;
+  let singer: { hz: number; prominenceDb: number } | null = null;
   if (x.length >= 4096) {
     try {
       const result = computeLtas(x, rate);
@@ -45,6 +47,13 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
       const ref = bandMeanDb(result.freqs, result.db, REF_BAND[0], REF_BAND[1]);
       sfBalance = sf !== null && ref !== null ? Math.round((sf - ref) * 100) / 100 : null;
       centroid = spectralCentroid(result.freqs, result.db);
+      const rawSinger = singerFormant(result.freqs, result.db);
+      if (rawSinger) {
+        singer = {
+          hz: Math.round(rawSinger.hz * 10) / 10,
+          prominenceDb: Math.round(rawSinger.prominenceDb * 10) / 10,
+        };
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (
@@ -67,6 +76,8 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
     sf_balance_db: sfBalance,
     spectral_centroid_hz: centroid,
     formants_hz: x.length >= rate / 2 ? analyseFormants(x, rate) : [],
+    singer_formant_hz: singer?.hz ?? null,
+    singer_formant_db: singer?.prominenceDb ?? null,
   };
 
   return { metrics, ltas };

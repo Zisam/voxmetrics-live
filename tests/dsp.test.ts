@@ -10,7 +10,7 @@ import {
   selectFormants,
 } from "../src/dsp/formants.ts";
 import { analyseH1H2 } from "../src/dsp/h1h2.ts";
-import { computeLtas, bandMeanDb, spectralCentroid } from "../src/dsp/ltas.ts";
+import { computeLtas, bandMeanDb, spectralCentroid, singerFormant } from "../src/dsp/ltas.ts";
 import { VIB_TRUSTED_SECONDS } from "../src/dsp/constants.ts";
 import { synth, RATE } from "./synth.ts";
 
@@ -348,6 +348,55 @@ describe("bandMeanDb and spectralCentroid", () => {
     expect(mean).not.toBeNull();
     const centroid = spectralCentroid(freqs, db);
     expect(centroid).toBeGreaterThan(100);
+  });
+});
+
+describe("singerFormant", () => {
+  it("finds the 2.4-3.2 kHz cluster peak with positive prominence", () => {
+    // synth harmonics: 10*293.66 = 2937 Hz inside the cluster, neighbors weak
+    const sig = synth(0, 0, 293.66, 3);
+    const { freqs, db } = computeLtas(sig, RATE);
+    const sf = singerFormant(freqs, db);
+    expect(sf).not.toBeNull();
+    expect(sf!.hz).toBeGreaterThan(2400);
+    expect(sf!.hz).toBeLessThan(3200);
+    expect(sf!.hz).toBeCloseTo(2936.6, -1);
+    expect(sf!.prominenceDb).toBeGreaterThan(6);
+  });
+
+  it("returns null when LTAS does not cover the cluster", () => {
+    const freqs = new Float64Array([100, 200, 300, 400, 500]);
+    const db = new Float64Array([-10, -12, -14, -13, -11]);
+    expect(singerFormant(freqs, db)).toBeNull();
+  });
+
+  it("measures prominence in the realistic 0-20 dB regime on crafted LTAS", () => {
+    // 10 Hz bins; cluster 2400-3200, baselines 1500-2400 and 3200-4200
+    const freqs = new Float64Array(501);
+    const db = new Float64Array(501);
+    for (let i = 0; i <= 500; i++) freqs[i] = i * 10;
+    db.fill(-40);
+    db[290] = -30; // 2900 Hz peak: +10 dB over flat baseline
+    let sf = singerFormant(freqs, db);
+    expect(sf!.hz).toBe(2900);
+    expect(sf!.prominenceDb).toBeCloseTo(10, 5);
+
+    db[290] = -37; // +3 dB → ok threshold
+    sf = singerFormant(freqs, db);
+    expect(sf!.prominenceDb).toBeCloseTo(3, 5);
+
+    db[290] = -40; // flat → 0 dB
+    sf = singerFormant(freqs, db);
+    expect(sf!.prominenceDb).toBeCloseTo(0, 5);
+  });
+
+  it("is surfaced through analyseBuffer", () => {
+    const sig = synth(0, 0, 293.66, 3);
+    const { metrics } = analyseBuffer(sig, RATE);
+    expect(metrics.singer_formant_hz).not.toBeNull();
+    expect(metrics.singer_formant_hz!).toBeGreaterThan(2400);
+    expect(metrics.singer_formant_hz!).toBeLessThan(3200);
+    expect(metrics.singer_formant_db).toBeGreaterThan(6);
   });
 });
 

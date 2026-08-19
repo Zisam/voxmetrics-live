@@ -1,6 +1,7 @@
 import { rms } from "./math.ts";
 import { hanning } from "./math.ts";
 import { rfft, rfftfreq, magnitudeSquared } from "./fft.ts";
+import { SINGER_FORMANT_CLUSTER } from "./constants.ts";
 
 export function computeLtas(
   x: Float64Array,
@@ -49,6 +50,50 @@ export function bandMeanDb(
   let sum = 0;
   for (const v of vals) sum += v;
   return sum / vals.length;
+}
+
+/**
+ * Singer's formant ("ring"): the strongest peak in the SINGER_FORMANT_CLUSTER
+ * band measured as dB prominence over the mean of adjacent baseline bands
+ * (1.5–2.4 and 3.2–4.2 kHz). Returns null when the LTAS does not cover the
+ * cluster.
+ */
+export function singerFormant(
+  freqs: Float64Array,
+  db: Float64Array,
+): { hz: number; prominenceDb: number } | null {
+  const [cLo, cHi] = SINGER_FORMANT_CLUSTER;
+  const inBand = (lo: number, hi: number): number[] => {
+    const vals: number[] = [];
+    for (let i = 0; i < freqs.length; i++) {
+      if (freqs[i]! >= lo && freqs[i]! <= hi) vals.push(db[i]!);
+    }
+    return vals;
+  };
+  const mean = (vals: number[]): number | null => {
+    if (!vals.length) return null;
+    let s = 0;
+    for (const v of vals) s += v;
+    return s / vals.length;
+  };
+
+  const cluster = inBand(cLo, cHi);
+  if (cluster.length < 3) return null;
+  const lower = mean(inBand(1500, cLo));
+  const upper = mean(inBand(cHi, 4200));
+  const baselines = [lower, upper].filter((v): v is number => v != null);
+  if (!baselines.length) return null;
+  const baseline = baselines.reduce((a, b) => a + b, 0) / baselines.length;
+
+  let peakDb = -Infinity;
+  let peakHz = 0;
+  for (let i = 0; i < freqs.length; i++) {
+    if (freqs[i]! >= cLo && freqs[i]! <= cHi && db[i]! > peakDb) {
+      peakDb = db[i]!;
+      peakHz = freqs[i]!;
+    }
+  }
+  return { hz: peakHz, prominenceDb: peakDb - baseline };
 }
 
 export function spectralCentroid(freqs: Float64Array, db: Float64Array): number {

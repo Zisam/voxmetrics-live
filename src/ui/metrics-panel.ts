@@ -1,5 +1,9 @@
 import type { MetricsSnapshot, VibratoResult } from "../types.ts";
 import { hzToMidi, midiToNoteLabel } from "../dsp/math.ts";
+import {
+  SINGER_FORMANT_CLUSTER,
+  VIB_TRUSTED_SECONDS,
+} from "../dsp/constants.ts";
 
 export interface LtasSnapshot {
   freqs: Float64Array;
@@ -8,22 +12,67 @@ export interface LtasSnapshot {
 
 export type QualityLevel = "" | "ok" | "good" | "warn";
 
+/** Reference (target) thresholds — single source for levels AND UI text. */
+export const VIB_RATE_GOOD: readonly [number, number] = [4.5, 7.5];
+export const VIB_RATE_OK: readonly [number, number] = [3.5, 9.5];
+export const VIB_EXTENT_GOOD: readonly [number, number] = [40, 250];
+export const VIB_EXTENT_OK: readonly [number, number] = [20, 400];
+export const VIB_REGULARITY_GOOD = 0.6;
+export const VIB_REGULARITY_OK = 0.35;
+export const VIB_STEADY_TRUSTED_SEC = VIB_TRUSTED_SECONDS;
+
+export function fmtRangeRef(range: readonly [number, number], unit: string): string {
+  return `норма ${range[0]}–${range[1]} ${unit}`;
+}
+
 export function vibRateLevel(hz: number): QualityLevel {
-  if (hz >= 4.5 && hz <= 7.5) return "good";
-  if (hz >= 3.5 && hz <= 9.5) return "ok";
+  if (hz >= VIB_RATE_GOOD[0] && hz <= VIB_RATE_GOOD[1]) return "good";
+  if (hz >= VIB_RATE_OK[0] && hz <= VIB_RATE_OK[1]) return "ok";
   return "warn";
 }
 
 export function vibExtentLevel(cents: number): QualityLevel {
-  if (cents >= 40 && cents <= 250) return "good";
-  if (cents >= 20 && cents <= 400) return "ok";
+  if (cents >= VIB_EXTENT_GOOD[0] && cents <= VIB_EXTENT_GOOD[1]) return "good";
+  if (cents >= VIB_EXTENT_OK[0] && cents <= VIB_EXTENT_OK[1]) return "ok";
   return "warn";
 }
 
 export function vibRegularityLevel(v: number): QualityLevel {
-  if (v >= 0.6) return "good";
-  if (v >= 0.35) return "ok";
+  if (v >= VIB_REGULARITY_GOOD) return "good";
+  if (v >= VIB_REGULARITY_OK) return "ok";
   return "warn";
+}
+
+export function vibSteadyLevel(steadySec: number, trusted: boolean): QualityLevel {
+  if (trusted || steadySec >= VIB_STEADY_TRUSTED_SEC) return "good";
+  if (steadySec >= 1) return "ok";
+  return "warn";
+}
+
+/** Singer's-formant ("ring") prominence thresholds, dB over local baseline. */
+export const SINGER_FORMANT_GOOD_DB = 6;
+export const SINGER_FORMANT_OK_DB = 3;
+export const SINGER_FORMANT_BAND: readonly [number, number] =
+  SINGER_FORMANT_CLUSTER;
+
+/** Broad formant orientation ranges (vowel- and voice-type dependent). */
+export const F1_RANGE: readonly [number, number] = [250, 1000];
+export const F2_RANGE: readonly [number, number] = [850, 2800];
+export const F3_RANGE: readonly [number, number] = [2200, 3200];
+
+export function singerFormantLevel(prominenceDb: number): QualityLevel {
+  if (prominenceDb >= SINGER_FORMANT_GOOD_DB) return "good";
+  if (prominenceDb >= SINGER_FORMANT_OK_DB) return "ok";
+  return "warn";
+}
+
+export function formantLevel(
+  hz: number | undefined,
+  range: readonly [number, number],
+): QualityLevel {
+  if (hz == null) return "";
+  if (hz >= range[0] && hz <= range[1]) return "good";
+  return "";
 }
 
 export function medianNoteLabel(hz: number | null): string {
@@ -47,7 +96,9 @@ function setQuality(el: HTMLElement, level: QualityLevel): void {
   el.className = `mval${level ? ` q-${level}` : ""}`;
 }
 
-function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): void {
+const LTAS_GRID_HZ = [100, 1000, 10000];
+
+function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): boolean {
   const cssW = canvas.clientWidth || 260;
   const cssH = canvas.clientHeight || 64;
   const dpr = window.devicePixelRatio || 1;
@@ -56,16 +107,16 @@ function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): void {
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
   const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) return false;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
   const { freqs, db } = ltas;
-  if (freqs.length < 3 || freqs.length !== db.length) return;
+  if (freqs.length < 3 || freqs.length !== db.length) return false;
 
   const fMin = Math.max(freqs[1]!, 50);
   const fMax = freqs[freqs.length - 1]!;
-  if (!(fMax > fMin)) return;
+  if (!(fMax > fMin)) return false;
   const lMin = Math.log10(fMin);
   const lMax = Math.log10(fMax);
 
@@ -75,12 +126,28 @@ function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): void {
     if (v < dMin) dMin = v;
     if (v > dMax) dMax = v;
   }
-  if (!(dMax > dMin)) return;
+  if (!(dMax > dMin)) return false;
 
   const toX = (f: number) =>
     ((Math.log10(Math.max(f, fMin)) - lMin) / (lMax - lMin)) * (cssW - 2) + 1;
   const toY = (v: number) =>
     cssH - 2 - ((v - dMin) / (dMax - dMin)) * (cssH - 6);
+
+  ctx.strokeStyle = "#252a36";
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#6b7280";
+  ctx.font = "9px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  for (const f of LTAS_GRID_HZ) {
+    if (f <= fMin || f >= fMax) continue;
+    const x = toX(f);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, cssH - 9);
+    ctx.stroke();
+    const label = f >= 1000 ? `${f / 1000}к` : `${f}`;
+    ctx.fillText(label, x + 2, cssH - 1);
+  }
 
   ctx.beginPath();
   ctx.moveTo(toX(freqs[1]!), toY(db[1]!));
@@ -94,33 +161,131 @@ function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): void {
   ctx.closePath();
   ctx.fillStyle = "rgba(91, 141, 239, 0.15)";
   ctx.fill();
+  return true;
 }
 
 export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
   root.innerHTML = `
+    <div class="mlegend">
+      <span class="mchip q-good">норма</span>
+      <span class="mchip q-ok">допустимо</span>
+      <span class="mchip q-warn">вне нормы</span>
+    </div>
     <section class="mcard">
       <h2>Вибрато</h2>
-      <div class="mrow"><span class="mlabel">Частота</span><span class="mval" id="mv-vib-rate">—</span></div>
-      <div class="mrow"><span class="mlabel">Размах</span><span class="mval" id="mv-vib-extent">—</span></div>
-      <div class="mrow"><span class="mlabel">Регулярность</span><span class="mval" id="mv-vib-reg">—</span></div>
-      <div class="mrow"><span class="mlabel">Ровный тон</span><span class="mval" id="mv-vib-steady">—</span></div>
-      <p class="mhint" id="mv-vib-hint">Пойте одну ноту ≥ 4 с без перерыва</p>
+      <div class="mrow">
+        <span class="mlabel">Частота</span>
+        <span class="mstack">
+          <span class="mval" id="mv-vib-rate">—</span>
+          <span class="mref">${fmtRangeRef(VIB_RATE_GOOD, "Гц")}</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Размах</span>
+        <span class="mstack">
+          <span class="mval" id="mv-vib-extent">—</span>
+          <span class="mref">${fmtRangeRef(VIB_EXTENT_GOOD, "центов")}</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Регулярность</span>
+        <span class="mstack">
+          <span class="mval" id="mv-vib-reg">—</span>
+          <span class="mref">норма ≥ ${VIB_REGULARITY_GOOD * 100} %</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Ровный тон</span>
+        <span class="mstack">
+          <span class="mval" id="mv-vib-steady">—</span>
+          <span class="mref">надёжно ≥ ${VIB_STEADY_TRUSTED_SEC} с</span>
+        </span>
+      </div>
+      <p class="mhint" id="mv-vib-hint">Пойте одну ноту ≥ ${VIB_STEADY_TRUSTED_SEC} с без перерыва</p>
     </section>
-    <section class="mcard">
+    <section class="mcard" title="Эталонных значений нет: зависит от голосового типа и гласного">
       <h2>Тон</h2>
-      <div class="mrow"><span class="mlabel">Медиана F0</span><span class="mval" id="mv-tone-median">—</span></div>
-      <div class="mrow"><span class="mlabel">Озвученность</span><span class="mval" id="mv-tone-voiced">—</span></div>
-      <div class="mrow"><span class="mlabel">Окно анализа</span><span class="mval" id="mv-tone-window">—</span></div>
+      <div class="mrow">
+        <span class="mlabel">Медиана F0</span>
+        <span class="mstack">
+          <span class="mval" id="mv-tone-median">—</span>
+          <span class="mref">индивидуальна</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Озвученность</span>
+        <span class="mstack">
+          <span class="mval" id="mv-tone-voiced">—</span>
+          <span class="mref">информативная</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Окно анализа</span>
+        <span class="mstack">
+          <span class="mval" id="mv-tone-window">—</span>
+          <span class="mref">скользящее</span>
+        </span>
+      </div>
     </section>
-    <section class="mcard">
+    <section class="mcard" title="Форманты зависят от гласного и типа голоса — диапазоны ориентировочные">
+      <h2>Резонанс</h2>
+      <div class="mrow">
+        <span class="mlabel">F1</span>
+        <span class="mstack">
+          <span class="mval" id="mv-f1">—</span>
+          <span class="mref">~${F1_RANGE[0]}–${F1_RANGE[1]} Гц</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">F2</span>
+        <span class="mstack">
+          <span class="mval" id="mv-f2">—</span>
+          <span class="mref">~${F2_RANGE[0]}–${F2_RANGE[1]} Гц</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">F3</span>
+        <span class="mstack">
+          <span class="mval" id="mv-f3">—</span>
+          <span class="mref">~${F3_RANGE[0]}–${F3_RANGE[1]} Гц</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Певч. форманта</span>
+        <span class="mstack">
+          <span class="mval" id="mv-singer">—</span>
+          <span class="mref">пик ${SINGER_FORMANT_BAND[0] / 1000}–${SINGER_FORMANT_BAND[1] / 1000} кГц · норма ≥ ${SINGER_FORMANT_GOOD_DB} дБ</span>
+        </span>
+      </div>
+    </section>
+    <section class="mcard" title="Эталонных значений нет: сравнивайте свой тренд между подходами">
       <h2>Спектр</h2>
-      <div class="mrow"><span class="mlabel">H1−H2</span><span class="mval" id="mv-spec-h1h2">—</span></div>
-      <div class="mrow"><span class="mlabel">Центроид</span><span class="mval" id="mv-spec-centroid">—</span></div>
-      <div class="mrow"><span class="mlabel">S/F баланс</span><span class="mval" id="mv-spec-sf">—</span></div>
+      <div class="mrow">
+        <span class="mlabel">H1−H2</span>
+        <span class="mstack">
+          <span class="mval" id="mv-spec-h1h2">—</span>
+          <span class="mref">тренд</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Центроид</span>
+        <span class="mstack">
+          <span class="mval" id="mv-spec-centroid">—</span>
+          <span class="mref">тренд</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">S/F баланс</span>
+        <span class="mstack">
+          <span class="mval" id="mv-spec-sf">—</span>
+          <span class="mref">тренд</span>
+        </span>
+      </div>
     </section>
-    <section class="mcard">
-      <h2>LTAS</h2>
+    <section class="mcard" title="Усреднённый спектр окна анализа: где сосредоточена энергия голоса">
+      <h2>LTAS · спектр</h2>
       <canvas class="mltas" id="mv-ltas"></canvas>
+      <p class="mhint" id="mv-ltas-hint">Появится после ~2 с звука выше порога гейта</p>
     </section>
   `;
 
@@ -136,7 +301,12 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
   const specH1h2 = el("mv-spec-h1h2");
   const specCentroid = el("mv-spec-centroid");
   const specSf = el("mv-spec-sf");
+  const f1 = el("mv-f1");
+  const f2 = el("mv-f2");
+  const f3 = el("mv-f3");
+  const singer = el("mv-singer");
   const ltasCanvas = root.querySelector<HTMLCanvasElement>("#mv-ltas")!;
+  const ltasHint = el("mv-ltas-hint");
 
   function renderVibrato(v: VibratoResult | null): void {
     if (!v) {
@@ -161,7 +331,7 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
     vibSteady.textContent = `${v.steady_seconds.toFixed(1)} с${
       v.trusted ? " · надёжно" : ""
     }`;
-    setQuality(vibSteady, v.trusted ? "good" : "ok");
+    setQuality(vibSteady, vibSteadyLevel(v.steady_seconds, v.trusted));
     vibHint.classList.toggle("hidden", v.trusted);
   }
 
@@ -179,20 +349,53 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
           ? `${Math.round(metrics.spectral_centroid_hz)} Гц`
           : "—";
       specSf.textContent = fmtDb(metrics.sf_balance_db);
+
+      const fHz = [metrics.formants_hz[0], metrics.formants_hz[1], metrics.formants_hz[2]];
+      const fEls = [f1, f2, f3];
+      const fRanges = [F1_RANGE, F2_RANGE, F3_RANGE];
+      for (let i = 0; i < 3; i++) {
+        const hz = fHz[i];
+        fEls[i]!.textContent = hz != null ? `${Math.round(hz)} Гц` : "—";
+        setQuality(fEls[i]!, formantLevel(hz, fRanges[i]!));
+      }
+
+      if (metrics.singer_formant_hz != null && metrics.singer_formant_db != null) {
+        singer.textContent =
+          `${(metrics.singer_formant_hz / 1000).toFixed(2)} кГц · ` +
+          `${metrics.singer_formant_db >= 0 ? "+" : ""}${metrics.singer_formant_db.toFixed(1)} дБ`;
+        setQuality(singer, singerFormantLevel(metrics.singer_formant_db));
+      } else {
+        singer.textContent = "—";
+        setQuality(singer, "");
+      }
     },
     updateLtas(ltas: LtasSnapshot): void {
-      drawLtas(ltasCanvas, ltas);
+      const drawn = drawLtas(ltasCanvas, ltas);
+      ltasHint.classList.toggle("hidden", drawn);
     },
     reset(): void {
       renderVibrato(null);
-      for (const el of [toneMedian, toneVoiced, toneWindow, specH1h2, specCentroid, specSf]) {
+      for (const el of [
+        toneMedian,
+        toneVoiced,
+        toneWindow,
+        specH1h2,
+        specCentroid,
+        specSf,
+        f1,
+        f2,
+        f3,
+        singer,
+      ]) {
         el.textContent = "—";
+        setQuality(el, "");
       }
       const ctx = ltasCanvas.getContext("2d");
       if (ctx) {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, ltasCanvas.width, ltasCanvas.height);
       }
+      ltasHint.classList.remove("hidden");
     },
   };
 }
