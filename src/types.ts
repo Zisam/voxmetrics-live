@@ -31,7 +31,7 @@ export interface F0Point {
 export type WorkerOutMessage =
   | { type: "f0"; points: F0Point[] }
   | { type: "metrics"; metrics: MetricsSnapshot }
-  | { type: "ltas"; freqs: number[]; db: number[] }
+  | { type: "ltas"; freqs: Float64Array; db: Float64Array }
   | { type: "status"; message: string }
   | { type: "error"; message: string }
   | { type: "batch"; messages: WorkerOutMessage[] };

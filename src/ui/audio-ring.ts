@@ -31,30 +31,19 @@ export function ringToArray(ring: AudioRing): Float64Array {
 }
 
 /**
- * View into ring when contiguous; otherwise null (tracker uses tail only).
+ * Last N samples as contiguous slice (may allocate once if wrapped).
+ * Returns a copy or a live view; do not retain across appendAudioRing calls.
  */
-export function ringContiguousView(ring: AudioRing): Float64Array | null {
-  if (ring.length === 0) return new Float64Array(0);
-  if (ring.start + ring.length <= ring.capacity) {
-    return ring.data.subarray(ring.start, ring.start + ring.length);
-  }
-  return null;
-}
-
-/** Last N samples as contiguous slice (may allocate once if wrapped). */
 export function ringTail(ring: AudioRing, n: number): Float64Array {
   const take = Math.min(n, ring.length);
   if (take === 0) return new Float64Array(0);
-  const end = (ring.start + ring.length) % ring.capacity;
+  if (take === ring.length) return ringToArray(ring);
   const start = (ring.start + ring.length - take) % ring.capacity;
-  if (start < end || take === ring.length && ring.start + ring.length <= ring.capacity) {
-    if (start < end) return ring.data.subarray(start, end);
-    return ring.data.subarray(ring.start, ring.start + ring.length);
-  }
+  const end = (start + take) % ring.capacity;
+  if (start < end) return ring.data.subarray(start, end);
   const out = new Float64Array(take);
-  const first = ring.capacity - start;
   out.set(ring.data.subarray(start, ring.capacity));
-  out.set(ring.data.subarray(0, take - first), first);
+  out.set(ring.data.subarray(0, end), ring.capacity - start);
   return out;
 }
 

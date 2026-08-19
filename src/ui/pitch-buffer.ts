@@ -3,7 +3,6 @@ import { hzToMidi, noteName } from "../dsp/math.ts";
 import {
   MAX_PITCH_POINTS,
   PITCH_WINDOW_SEC,
-  HOP_SEC,
 } from "../dsp/constants.ts";
 
 export { PITCH_WINDOW_SEC };
@@ -32,17 +31,26 @@ export interface PitchBatchResult {
   silenceBatch: boolean;
 }
 
-/** Tracks wall time between chart updates for left-scroll delta. */
+/** Tracks wall time + stream anchor for chart scroll/placement. */
 export interface ScrollState {
   lastWallSec: number | null;
+  /** Stream time of the newest appended point (worker `t`). */
+  anchorT: number | null;
+  /** Wall time when the anchor was established. */
+  anchorWallSec: number | null;
+  /** Stream time of the newest appended point ever (dedup guard). */
+  lastT: number | null;
 }
 
 export function createScrollState(): ScrollState {
-  return { lastWallSec: null };
+  return { lastWallSec: null, anchorT: null, anchorWallSec: null, lastT: null };
 }
 
 export function resetScrollState(scroll: ScrollState): void {
   scroll.lastWallSec = null;
+  scroll.anchorT = null;
+  scroll.anchorWallSec = null;
+  scroll.lastT = null;
 }
 
 export function clearPitchSeries(xs: number[], midi: (number | null)[]): void {
@@ -85,7 +93,12 @@ export function tickWallScroll(
   midi: (number | null)[],
   wallSec = performance.now() / 1000,
 ): void {
-  if (scroll.lastWallSec == null || xs.length === 0) return;
+  if (scroll.lastWallSec == null) return;
+  if (xs.length === 0) {
+    // keep the anchor fresh so a device stall doesn't displace later points
+    scroll.lastWallSec = wallSec;
+    return;
+  }
   const delta = wallSec - scroll.lastWallSec;
   if (delta > 0) {
     shiftSeriesLeft(xs, midi, delta);
@@ -94,8 +107,10 @@ export function tickWallScroll(
 }
 
 /**
- * Append F0 batch at the right edge (NOW_X). Does not scroll — call
- * tickWallScroll each frame for continuous drift.
+ * Append F0 batch anchored to stream timestamps: the newest point lands at
+ * NOW_X and older points place at NOW_X - (anchorT - t). Existing points are
+ * reconciled against the new anchor so wall/stream drift never produces
+ * unsorted x (uPlot draws backward segments otherwise).
  */
 export function appendScrollingPitchPoints(
   scroll: ScrollState,
@@ -109,15 +124,42 @@ export function appendScrollingPitchPoints(
 
   if (scroll.lastWallSec == null) scroll.lastWallSec = wallSec;
 
+  const batchNewestT = points[points.length - 1]!.t;
+
+  if (scroll.anchorT != null && batchNewestT > scroll.anchorT) {
+    // Net-correct existing series: expected x(t) = NOW_X - (anchor' - t).
+    // Current x(t) ≈ NOW_X - (anchor - t) - wallElapsed (ticks).
+    // Needed left-shift = streamAdvance - wallElapsed; ≈ 0 in steady state.
+    // A right-shift (wall ran ahead of a stalled stream) may only undo drift:
+    // never push points beyond NOW_X.
+    const wallElapsed = wallSec - (scroll.anchorWallSec ?? wallSec);
+    const streamAdvance = batchNewestT - scroll.anchorT;
+    let delta = streamAdvance - wallElapsed;
+    if (delta < 0 && xs.length > 0) {
+      const maxRightShift = windowSec - xs[xs.length - 1]!;
+      delta = Math.max(delta, -Math.max(0, maxRightShift));
+    }
+    if (delta !== 0) shiftSeriesLeft(xs, midi, delta);
+    scroll.anchorT = batchNewestT;
+    scroll.anchorWallSec = wallSec;
+  } else if (scroll.anchorT == null) {
+    scroll.anchorT = batchNewestT;
+    scroll.anchorWallSec = wallSec;
+  }
+
   let hudPoint: F0Point | null = null;
   let anyVoiced = false;
-  const n = points.length;
 
-  for (let i = 0; i < n; i++) {
-    const p = points[i]!;
-    const x = windowSec - (n - 1 - i) * HOP_SEC;
-    if (x < 0) continue;
+  for (const p of points) {
+    // dedup guard: stream must stay strictly increasing for sorted x
+    if (scroll.lastT != null && p.t <= scroll.lastT) continue;
+    const x = windowSec - (scroll.anchorT! - p.t);
+    if (x < 0) {
+      scroll.lastT = p.t;
+      continue;
+    }
     xs.push(x);
+    scroll.lastT = p.t;
     if (p.voiced && p.f0_hz > 0) {
       midi.push(hzToMidi(p.f0_hz));
       hudPoint = p;

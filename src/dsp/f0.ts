@@ -14,18 +14,40 @@ export interface F0Track {
   voiced: Uint8Array;
 }
 
-function pickLag(acf: Float64Array, lagMin: number, lagMax: number, rel = 0.9): number | null {
+/**
+ * Pick the fundamental lag from an ACF. A linear short-lag bias makes a
+ * longer lag win only when its peak is substantially higher, preventing
+ * noise/hum-inflated ACF tails (amplified by window-overlap normalization)
+ * from stealing the fundamental.
+ */
+export function pickLag(
+  acf: Float64Array,
+  lagMin: number,
+  lagMax: number,
+  rel = 0.9,
+  bias = 0.15,
+): number | null {
   const hi = Math.min(lagMax, acf.length - 2);
   if (hi <= lagMin) return null;
-  let best = -Infinity;
+  const span = hi - lagMin;
+  const biasAt = (lag: number) => bias * ((lag - lagMin) / span);
+
+  let bestRaw = -Infinity;
+  let bestEff = -Infinity;
   for (let i = lagMin; i <= hi; i++) {
-    if (acf[i]! > best) best = acf[i]!;
+    if (acf[i]! > bestRaw) bestRaw = acf[i]!;
+    const eff = acf[i]! - biasAt(i);
+    if (eff > bestEff) bestEff = eff;
   }
-  if (best <= 0) return null;
+  if (bestRaw <= 0) return null;
 
   for (let lag = lagMin; lag <= hi; lag++) {
     const val = acf[lag]!;
-    if (val >= rel * best && val >= acf[lag - 1]! && val >= acf[lag + 1]!) {
+    if (
+      val - biasAt(lag) >= rel * bestEff &&
+      val >= acf[lag - 1]! &&
+      val >= acf[lag + 1]!
+    ) {
       if (lagMin < lag && lag < acf.length - 1) {
         const a = acf[lag - 1]!;
         const b = acf[lag]!;
@@ -38,8 +60,13 @@ function pickLag(acf: Float64Array, lagMin: number, lagMax: number, rel = 0.9): 
   }
 
   let argmax = lagMin;
-  for (let i = lagMin + 1; i <= hi; i++) {
-    if (acf[i]! > acf[argmax]!) argmax = i;
+  let argmaxEff = -Infinity;
+  for (let i = lagMin; i <= hi; i++) {
+    const eff = acf[i]! - biasAt(i);
+    if (eff > argmaxEff) {
+      argmaxEff = eff;
+      argmax = i;
+    }
   }
   let lag = argmax;
   if (lagMin < lag && lag < acf.length - 1) {
@@ -58,13 +85,13 @@ export function foldToFundamental(
   lag: number,
   lagMax: number,
   rate: number,
-  rel = 0.9,
+  margin = 1.02,
 ): number {
   let folded = lag;
   const hi = Math.min(lagMax, acf.length - 2);
   while (rate / folded > 650 && folded * 2 <= hi) {
     const doubled = Math.round(folded * 2);
-    if (acf[doubled]! >= rel * acf[Math.round(folded)]!) folded = doubled;
+    if (acf[doubled]! > margin * acf[Math.round(folded)]!) folded = doubled;
     else break;
   }
   return folded;
@@ -122,7 +149,8 @@ export function trackF0(x: Float64Array, rate: number): F0Track {
       acf[k] = acfFull[k]! / acfFull[0]! / Math.max(acfW[k]!, 0.1);
     }
 
-    const lag = pickLag(acf, lagMin, lagMax);
+    let lag = pickLag(acf, lagMin, lagMax);
+    if (lag !== null) lag = foldToFundamental(acf, lag, lagMax, rate);
     if (lag === null || acf[Math.round(lag)]! < 0.35) continue;
 
     f0[i] = rate / lag;
