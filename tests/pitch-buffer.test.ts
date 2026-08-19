@@ -83,6 +83,63 @@ describe("appendScrollingPitchPoints", () => {
     appendScrollingPitchPoints(scroll, xs, midi, [point(0.2, 440, true)], undefined, 0.2);
     expect(xs).toEqual([NOW_X]);
   });
+
+  it("does not displace fresh points after a long stall with empty series", () => {
+    const scroll = createScrollState();
+    const xs: number[] = [];
+    const midi: (number | null)[] = [];
+    appendScrollingPitchPoints(scroll, xs, midi, [point(1, 440, true)], undefined, 1);
+    tickWallScroll(scroll, xs, midi, 7);
+    expect(xs.length).toBe(0); // scrolled out of window and trimmed
+    // long stall with empty series must not accumulate wall delta
+    tickWallScroll(scroll, xs, midi, 15);
+    appendScrollingPitchPoints(scroll, xs, midi, [point(3.2, 440, true)], undefined, 15);
+    expect(xs[xs.length - 1]).toBeCloseTo(NOW_X, 5);
+    tickWallScroll(scroll, xs, midi, 15.25);
+    expect(xs[xs.length - 1]).toBeCloseTo(NOW_X - 0.25, 5);
+  });
+
+  it("ignores duplicate or overlapping batches to keep x sorted", () => {
+    const scroll = createScrollState();
+    const xs: number[] = [];
+    const midi: (number | null)[] = [];
+    appendScrollingPitchPoints(
+      scroll,
+      xs,
+      midi,
+      [point(2, 440, true), point(2.005, 440, true)],
+      undefined,
+      2,
+    );
+    const len = xs.length;
+
+    // exact redelivery of the same batch: nothing appended
+    const dup = appendScrollingPitchPoints(
+      scroll,
+      xs,
+      midi,
+      [point(2, 440, true), point(2.005, 440, true)],
+      undefined,
+      2.05,
+    );
+    expect(dup.silenceBatch).toBe(true);
+    expect(xs.length).toBe(len);
+
+    // partial overlap: stale point skipped, new point appended at NOW_X
+    appendScrollingPitchPoints(
+      scroll,
+      xs,
+      midi,
+      [point(2.005, 440, true), point(2.01, 440, true)],
+      undefined,
+      2.1,
+    );
+    expect(xs.length).toBe(len + 1);
+    expect(xs[xs.length - 1]).toBeCloseTo(NOW_X, 5);
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i]!).toBeGreaterThanOrEqual(xs[i - 1]!);
+    }
+  });
 });
 
 describe("pitchXRange", () => {

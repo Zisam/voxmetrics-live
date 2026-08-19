@@ -1,11 +1,23 @@
 const CHUNK_SAMPLES = 4096;
 
+import { pickChannel, type ChannelSelection } from "./channel-select.ts";
+
 class CaptureProcessor extends AudioWorkletProcessor {
   private buf = new Float32Array(CHUNK_SAMPLES);
   private pos = 0;
+  private channel: ChannelSelection = "right";
+
+  constructor() {
+    super();
+    this.port.onmessage = (e: MessageEvent) => {
+      if (e.data?.type === "channel") {
+        this.channel = e.data.value === "left" ? "left" : "right";
+      }
+    };
+  }
 
   process(inputs: Float32Array[][]): boolean {
-    const input = inputs[0]?.[0];
+    const input = pickChannel(inputs[0], this.channel);
     if (!input?.length) return true;
 
     for (let i = 0; i < input.length; i++) {

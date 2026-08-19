@@ -16,15 +16,13 @@ export const BUFFER_SECONDS = 15;
 /** Visible pitch trace (s). ~5 s: short phrase + 1–2 vibrato cycles at 5–6 Hz; ~1000 pts at 5 ms hop. */
 export const PITCH_WINDOW_SEC = 5;
 export const MAX_PITCH_POINTS = Math.ceil(PITCH_WINDOW_SEC / HOP_SEC) + 20;
-/** HUD cents baseline refresh interval. */
-export const BASELINE_INTERVAL_MS = 1000;
 /** Rolling voiced-frame count for HUD baseline (~2 s at 5 ms hop when continuously voiced). */
 export const BASELINE_VOICED_SAMPLES = 400;
-/** Full metrics/LTAS analysis interval (independent of HUD baseline). */
-export const METRICS_INTERVAL_MS = 1000;
-/** Live metrics window — shorter than BUFFER_SECONDS to keep ~1 Hz analysis cheap. */
-export const METRICS_ANALYSIS_SEC = 4;
+/** Minimum audio in the analyser ring before first metrics emission (s). */
+export const METRICS_MIN_AUDIO_SEC = 2;
+/** Full metrics/LTAS analysis interval; runs in a dedicated worker. */
+export const METRICS_INTERVAL_MS = 2000;
+/** Live metrics window — long enough for trusted vibrato (≥4 s sustained voiced). */
+export const METRICS_ANALYSIS_SEC = 6;
 /** F0 tracker rolling buffer (s) — enough for 50 ms frame + live context. */
 export const TRACKER_BUFFER_SEC = 2;
-/** Compute metrics in worker (for future UI); emitted async so F0 stays realtime. */
-export const ENABLE_LIVE_METRICS = true;

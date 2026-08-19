@@ -1,16 +1,10 @@
 import type { WorkerInMessage, WorkerOutMessage } from "../types.ts";
-import {
-  createWorkerState,
-  emitMetricsNow,
-  handleWorkerMessage,
-  shouldEmitMetrics,
-} from "./dsp-core.ts";
+import { createWorkerState, handleWorkerMessage } from "./dsp-core.ts";
 
 const state = createWorkerState();
 
 const audioQueue: Float32Array[] = [];
 let drainScheduled = false;
-let metricsTimer: ReturnType<typeof setTimeout> | null = null;
 
 function postMessages(messages: WorkerOutMessage[]): void {
   if (messages.length === 0) return;
@@ -21,37 +15,15 @@ function postMessages(messages: WorkerOutMessage[]): void {
   self.postMessage({ type: "batch", messages });
 }
 
-function scheduleDeferredMetrics(clock: number): void {
-  if (!shouldEmitMetrics(state, clock)) return;
-  if (metricsTimer !== null) return;
-  state.lastMetricsAt = clock;
-  metricsTimer = setTimeout(() => {
-    metricsTimer = null;
-    if (!state.running) return;
-    postMessages(emitMetricsNow(state, performance.now()));
-  }, 0);
-}
-
 function drainAudioQueue(): void {
   drainScheduled = false;
   if (audioQueue.length === 0) return;
 
-  const batch = audioQueue.splice(0);
   const out: WorkerOutMessage[] = [];
-  let clock = performance.now();
-  for (const samples of batch) {
-    out.push(
-      ...handleWorkerMessage(
-        state,
-        { type: "audio", samples },
-        clock,
-        { syncMetrics: false },
-      ),
-    );
-    clock = performance.now();
+  for (const samples of audioQueue.splice(0)) {
+    out.push(...handleWorkerMessage(state, { type: "audio", samples }));
   }
   postMessages(out);
-  scheduleDeferredMetrics(clock);
 }
 
 function queueAudio(samples: Float32Array): void {

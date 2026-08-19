@@ -66,6 +66,17 @@ button:hover {
   background: #4a7ad8;
 }
 
+.channel-select {
+  background: #12141a;
+  color: #e8e6e3;
+  border: 1px solid #1e2230;
+  border-radius: 8px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .status {
   color: #9aa0a6;
   font-size: 0.85rem;
@@ -106,8 +117,15 @@ button:hover {
   color: #8b9199;
 }
 
+.stage {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .pitch-view {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   position: relative;
   background: #0d0f14;
@@ -116,6 +134,81 @@ button:hover {
 #pitch-chart {
   width: 100%;
   height: 100%;
+}
+
+.metrics-panel {
+  width: 300px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: #0f1117;
+  border-left: 1px solid #1e2230;
+}
+
+.mcard {
+  background: #12141a;
+  border: 1px solid #1e2230;
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+}
+
+.mcard h2 {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9aa0a6;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  padding: 0.15rem 0;
+}
+
+.mlabel {
+  color: #8b9199;
+}
+
+.mval {
+  font-variant-numeric: tabular-nums;
+  color: #e8e6e3;
+  text-align: right;
+}
+
+.mval.q-good {
+  color: #6ee7b7;
+}
+
+.mval.q-ok {
+  color: #9db4f5;
+}
+
+.mval.q-warn {
+  color: #f0a35e;
+}
+
+.mhint {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.mhint.hidden {
+  display: none;
+}
+
+.mltas {
+  width: 100%;
+  height: 64px;
+  display: block;
 }
 
 .footer {
@@ -141,6 +234,25 @@ button:hover {
 
 .uplot .u-over {
   cursor: default;
+}
+
+@media (max-width: 900px) {
+  .stage {
+    flex-direction: column;
+  }
+
+  .metrics-panel {
+    width: auto;
+    max-height: 40vh;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-left: none;
+    border-top: 1px solid #1e2230;
+  }
+
+  .metrics-panel .mcard {
+    flex: 1 1 240px;
+  }
 }
 
 @media (max-width: 640px) {

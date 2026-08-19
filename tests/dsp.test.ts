@@ -44,6 +44,33 @@ describe("trackF0", () => {
     expect(med).toBeLessThan(230);
   });
 
+  it("agrees offline and live on H2-dominant 440 Hz (fold symmetry)", () => {
+    const weakF0: [number, number][] = [
+      [1, 0.12],
+      [2, 0.9],
+      [3, 0.35],
+      [4, 0.15],
+    ];
+    const sig = synth(0, 0, 440, 2, weakF0);
+    const { f0, voiced } = trackF0(sig, RATE);
+    const offMed = medianVoicedF0(f0, voiced);
+    expect(offMed).toBeGreaterThan(430);
+    expect(offMed).toBeLessThan(450);
+
+    const tracker = new F0Tracker(RATE, 2);
+    const streamed: number[] = [];
+    for (let i = 0; i < sig.length; i += 4096) {
+      const part = sig.subarray(i, Math.min(i + 4096, sig.length));
+      tracker.pushSamples(Float32Array.from(part));
+      for (const frame of tracker.append()) {
+        if (frame.voiced) streamed.push(frame.f0);
+      }
+    }
+    streamed.sort((a, b) => a - b);
+    const liveMed = streamed[Math.floor(streamed.length / 2)]!;
+    expect(Math.abs(liveMed - offMed)).toBeLessThan(3);
+  });
+
   it("throws on buffer shorter than analysis window", () => {
     expect(() => trackF0(new Float64Array(100), RATE)).toThrow(/короче окна/);
   });
@@ -73,16 +100,26 @@ describe("f0ToCents", () => {
 });
 
 describe("foldToFundamental", () => {
-  it("folds octave harmonic to fundamental", () => {
+  it("folds when doubled-lag peak is clearly stronger (subharmonic lock)", () => {
+    const acf = new Float64Array(200);
+    acf.fill(0.1);
+    acf[0] = 1;
+    acf[50] = 0.9;
+    acf[100] = 0.98;
+    const folded = foldToFundamental(acf, 50, 150, 44100);
+    expect(folded).toBeGreaterThan(95);
+    expect(folded).toBeLessThan(105);
+  });
+
+  it("does not fold a clean high note (peaks nearly equal)", () => {
     const acf = new Float64Array(200);
     acf.fill(0.1);
     acf[0] = 1;
     acf[50] = 0.96;
     acf[100] = 0.94;
-    expect(foldToFundamental(acf, 50, 150, 44100)).toBeGreaterThan(95);
-    expect(foldToFundamental(acf, 50, 150, 44100)).toBeLessThan(105);
-    expect(foldToFundamental(acf, 100, 150, 44100)).toBeGreaterThan(95);
-    expect(foldToFundamental(acf, 100, 150, 44100)).toBeLessThan(105);
+    const folded = foldToFundamental(acf, 50, 150, 44100);
+    expect(folded).toBeGreaterThan(45);
+    expect(folded).toBeLessThan(55);
   });
 });
 
@@ -155,6 +192,25 @@ describe("F0Tracker", () => {
       expect(times[i]!).toBeGreaterThanOrEqual(times[i - 1]!);
     }
     expect(times[times.length - 1]).toBeCloseTo(sig.length / RATE, 0);
+  });
+
+  it.each([
+    [880, 5],
+    [1046.5, 6],
+  ])("tracks high note %.1f Hz without octave fold", (f0, tol) => {
+    const sig = synth(0, 0, f0, 2);
+    const tracker = new F0Tracker(RATE, 2);
+    const streamed: number[] = [];
+    for (let i = 0; i < sig.length; i += 4096) {
+      const part = sig.subarray(i, Math.min(i + 4096, sig.length));
+      tracker.pushSamples(Float32Array.from(part));
+      for (const frame of tracker.append()) {
+        if (frame.voiced) streamed.push(frame.f0);
+      }
+    }
+    streamed.sort((a, b) => a - b);
+    const med = streamed[Math.floor(streamed.length / 2)]!;
+    expect(Math.abs(med - f0)).toBeLessThan(tol);
   });
 });
 

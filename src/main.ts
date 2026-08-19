@@ -3,6 +3,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { F0Point, WorkerOutMessage } from "./types.ts";
 import { midiToNoteLabel } from "./dsp/math.ts";
+import { createNotch } from "./dsp/notch.ts";
 import {
   appendScrollingPitchPoints,
   clearPitchSeries,
@@ -18,11 +19,7 @@ import {
 import {
   acceptWorkerStreamMessage,
 } from "./ui/session.ts";
-import {
-  clearMetricsStore,
-  setLatestLtas,
-  setLatestMetrics,
-} from "./ui/metrics-store.ts";
+import { createMetricsPanel, type LtasSnapshot } from "./ui/metrics-panel.ts";
 import {
   createFrameScheduler,
   resetYRangeCache,
@@ -34,6 +31,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div class="toolbar-left">
       <h1>voxmetrics live</h1>
       <button id="toggle" type="button">Начать</button>
+      <select id="channel" class="channel-select" title="Канал аудиоинтерфейса">
+        <option value="right">Микрофон (R)</option>
+        <option value="left">Гитара (L)</option>
+      </select>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
     </div>
@@ -43,8 +44,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <span class="hud-hz" id="current-hz"></span>
     </div>
   </header>
-  <main class="pitch-view">
-    <div id="pitch-chart"></div>
+  <main class="stage">
+    <div class="pitch-view">
+      <div id="pitch-chart"></div>
+    </div>
+    <aside class="metrics-panel" id="metrics-panel"></aside>
   </main>
   <footer class="footer">
     <a href="https://github.com/Zisam/voxmetrics-live">GitHub</a>
@@ -53,21 +57,50 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 `;
 
 const toggleBtn = document.querySelector<HTMLButtonElement>("#toggle")!;
+const channelSelectEl =
+  document.querySelector<HTMLSelectElement>("#channel")!;
 const statusEl = document.querySelector<HTMLSpanElement>("#status")!;
 const currentNoteEl = document.querySelector<HTMLSpanElement>("#current-note")!;
 const currentCentsEl = document.querySelector<HTMLSpanElement>("#current-cents")!;
 const currentHzEl = document.querySelector<HTMLSpanElement>("#current-hz")!;
 const pitchChartEl = document.querySelector<HTMLDivElement>("#pitch-chart")!;
 const pitchViewEl = document.querySelector<HTMLElement>(".pitch-view")!;
+const metricsPanel = createMetricsPanel(
+  document.querySelector<HTMLElement>("#metrics-panel")!,
+);
 
-const worker = new Worker(new URL("./worker/dsp.ts", import.meta.url), {
+const dspWorker = new Worker(new URL("./worker/dsp.ts", import.meta.url), {
   type: "module",
 });
+const analyserWorker = new Worker(
+  new URL("./worker/analyser.ts", import.meta.url),
+  { type: "module" },
+);
 
 let audioCtx: AudioContext | null = null;
 let captureNode: AudioWorkletNode | null = null;
 let stream: MediaStream | null = null;
 let active = false;
+let starting = false;
+let notch: ((x: Float32Array) => Float32Array) | null = null;
+
+type Channel = "left" | "right";
+
+function storedChannel(): Channel {
+  return localStorage.getItem("voxmetrics.channel") === "left"
+    ? "left"
+    : "right";
+}
+
+channelSelectEl.value = storedChannel();
+
+function applyChannelSelection(): void {
+  const value = channelSelectEl.value === "left" ? "left" : "right";
+  localStorage.setItem("voxmetrics.channel", value);
+  captureNode?.port.postMessage({ type: "channel", value });
+}
+
+channelSelectEl.addEventListener("change", applyChannelSelection);
 
 const pitchX: number[] = [];
 const pitchMidi: (number | null)[] = [];
@@ -237,7 +270,7 @@ function clearChart(): void {
   pendingHud = undefined;
   pitchPlot.setData([[], []]);
   applyHud(null);
-  clearMetricsStore();
+  metricsPanel.reset();
 }
 
 function updatePitchChart(points: F0Point[]): void {
@@ -246,81 +279,120 @@ function updatePitchChart(points: F0Point[]): void {
   chartFrame.schedule();
 }
 
-function dispatchWorkerMessage(
-  msg: Exclude<WorkerOutMessage, { type: "batch" }>,
-): void {
-  if (!acceptWorkerStreamMessage(msg.type, active)) return;
-  if (msg.type === "status") statusEl.textContent = msg.message;
-  if (msg.type === "f0") updatePitchChart(msg.points);
-  if (msg.type === "metrics") setLatestMetrics(msg.metrics);
-  if (msg.type === "ltas") setLatestLtas({ freqs: msg.freqs, db: msg.db });
-  if (msg.type === "error") statusEl.textContent = `Ошибка: ${msg.message}`;
-}
-
-worker.onmessage = (ev: MessageEvent<WorkerOutMessage>) => {
-  const msg = ev.data;
+function handleWorkerOut(msg: WorkerOutMessage): void {
   if (msg.type === "batch") {
     for (const part of msg.messages) {
       if (part.type === "batch") continue;
-      dispatchWorkerMessage(part);
+      handleWorkerOut(part);
     }
     return;
   }
-  dispatchWorkerMessage(msg);
-};
+  if (!acceptWorkerStreamMessage(msg.type, active)) return;
+  if (msg.type === "status") statusEl.textContent = msg.message;
+  if (msg.type === "f0") updatePitchChart(msg.points);
+  if (msg.type === "metrics") {
+    metricsPanel.update(msg.metrics);
+  }
+  if (msg.type === "ltas") {
+    const ltas: LtasSnapshot = { freqs: msg.freqs, db: msg.db };
+    metricsPanel.updateLtas(ltas);
+  }
+  if (msg.type === "error") statusEl.textContent = `Ошибка: ${msg.message}`;
+}
 
-worker.onerror = (ev) => {
-  statusEl.textContent = `Ошибка worker: ${ev.message}`;
-  stop();
-};
+for (const worker of [dspWorker, analyserWorker]) {
+  worker.onmessage = (ev: MessageEvent<WorkerOutMessage>) => {
+    handleWorkerOut(ev.data);
+  };
+  worker.onerror = (ev) => {
+    statusEl.textContent = `Ошибка worker: ${ev.message || "неизвестная ошибка"}`;
+    stop();
+  };
+}
+
+function releasePartialStart(): void {
+  captureNode?.port.close();
+  captureNode?.disconnect();
+  captureNode = null;
+  notch = null;
+  dspWorker.postMessage({ type: "stop" });
+  analyserWorker.postMessage({ type: "stop" });
+  stopChartLoop();
+  void audioCtx?.close();
+  audioCtx = null;
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+}
 
 async function start(): Promise<void> {
-  clearChart();
-  active = false;
+  if (active || starting) return;
+  starting = true;
+  try {
+    clearChart();
 
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    },
-  });
-  stream.getAudioTracks()[0]?.addEventListener("ended", () => stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    });
 
-  audioCtx = new AudioContext();
-  await audioCtx.resume();
+    try {
+      audioCtx = new AudioContext();
+      await audioCtx.resume();
 
-  await audioCtx.audioWorklet.addModule(
-    new URL("./audio/capture-processor.ts", import.meta.url),
-  );
+      await audioCtx.audioWorklet.addModule(
+        new URL("./audio/capture-processor.ts", import.meta.url),
+      );
 
-  worker.postMessage({ type: "start", sampleRate: audioCtx.sampleRate });
-  active = true;
-  startChartLoop();
+      dspWorker.postMessage({ type: "start", sampleRate: audioCtx.sampleRate });
+      analyserWorker.postMessage({
+        type: "start",
+        sampleRate: audioCtx.sampleRate,
+      });
 
-  captureNode = new AudioWorkletNode(audioCtx, "capture-processor", {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1],
-  });
-  captureNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
-    const samples = e.data;
-    worker.postMessage({ type: "audio", samples }, [samples.buffer]);
-  };
+      captureNode = new AudioWorkletNode(audioCtx, "capture-processor", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+      });
+      captureNode.port.postMessage({ type: "channel", value: storedChannel() });
+      notch = createNotch(50, audioCtx.sampleRate);
+      captureNode.port.onmessage = (e: MessageEvent<Float32Array>) => {
+        if (!notch) return;
+        const samples = notch(e.data);
+        const copy = samples.slice();
+        dspWorker.postMessage({ type: "audio", samples }, [samples.buffer]);
+        analyserWorker.postMessage({ type: "audio", samples: copy }, [copy.buffer]);
+      };
 
-  const source = audioCtx.createMediaStreamSource(stream);
-  const silent = audioCtx.createGain();
-  silent.gain.value = 0;
-  source.connect(captureNode);
-  captureNode.connect(silent);
-  silent.connect(audioCtx.destination);
-  toggleBtn.textContent = "Стоп";
+      const source = audioCtx.createMediaStreamSource(stream);
+      const silent = audioCtx.createGain();
+      silent.gain.value = 0;
+      source.connect(captureNode);
+      captureNode.connect(silent);
+      silent.connect(audioCtx.destination);
+
+      active = true;
+      startChartLoop();
+      stream.getAudioTracks()[0]?.addEventListener("ended", () => stop());
+      toggleBtn.textContent = "Стоп";
+    } catch (err) {
+      releasePartialStart();
+      throw err;
+    }
+  } finally {
+    starting = false;
+  }
 }
 
 function stop(): void {
   if (!active) return;
   active = false;
-  worker.postMessage({ type: "stop" });
+  notch = null;
+  dspWorker.postMessage({ type: "stop" });
+  analyserWorker.postMessage({ type: "stop" });
   captureNode?.port.close();
   captureNode?.disconnect();
   captureNode = null;
@@ -333,8 +405,8 @@ function stop(): void {
 }
 
 toggleBtn.addEventListener("click", async () => {
-  if (active) {
-    stop();
+  if (active || starting) {
+    if (active) stop();
     return;
   }
   try {
