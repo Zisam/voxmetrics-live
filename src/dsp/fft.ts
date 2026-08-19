@@ -99,3 +99,28 @@ export function magnitudeSquared(spec: Spectrum): Float64Array {
 export function nFftForFrame(frame: number): number {
   return nextPow2(2 * frame);
 }
+
+/** Magnitude RFFT for arbitrary length (matches numpy.fft.rfft on exact input). */
+export function rfftMagnitude(input: Float64Array): Float64Array {
+  const n = input.length;
+  const half = Math.floor(n / 2) + 1;
+  const out = new Float64Array(half);
+  for (let k = 0; k < half; k++) {
+    let re = 0;
+    let im = 0;
+    for (let t = 0; t < n; t++) {
+      const ang = (-2 * Math.PI * k * t) / n;
+      re += input[t]! * Math.cos(ang);
+      im += input[t]! * Math.sin(ang);
+    }
+    out[k] = Math.hypot(re, im);
+  }
+  return out;
+}
+
+export function rfftfreqN(n: number, d: number): Float64Array {
+  const half = Math.floor(n / 2) + 1;
+  const out = new Float64Array(half);
+  for (let i = 0; i < half; i++) out[i] = i / (d * n);
+  return out;
+}

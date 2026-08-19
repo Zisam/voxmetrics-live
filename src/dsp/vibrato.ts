@@ -7,8 +7,8 @@ import {
   VIB_MIN_PROMINENCE,
   HOP_SEC,
 } from "./constants.ts";
-import { medianFilter, median } from "./math.ts";
-import { rfft, rfftfreq, magnitudeSquared } from "./fft.ts";
+import { medianFilter, median, convolveSame, hanning } from "./math.ts";
+import { rfftMagnitude, rfftfreqN } from "./fft.ts";
 import { longestVoicedRun } from "./f0.ts";
 import type { VibratoResult } from "../types.ts";
 
@@ -81,9 +81,9 @@ export function analyseVibrato(
     if (Math.abs(cents[i]! - smooth[i]!) > 300) cents[i] = smooth[i]!;
   }
 
-  let win = Math.max(3, Math.floor(0.4 / hopSec) | 1);
+  const win = Math.max(3, Math.floor(0.4 / hopSec) | 1);
   const kernel = new Float64Array(win).fill(1 / win);
-  const trend = convolveSameReflect(cents, kernel);
+  const trend = convolveSame(cents, kernel);
   let workCents = cents;
   let workTrend = trend;
   const edge = win >> 1;
@@ -97,15 +97,13 @@ export function analyseVibrato(
   if (osc.length < 16) return null;
 
   const windowed = new Float64Array(osc.length);
-  const hann = hanning1(osc.length);
+  const hann = hanning(osc.length);
   for (let i = 0; i < osc.length; i++) windowed[i] = osc[i]! * hann[i]!;
 
-  const nFft = nextPow2(osc.length);
-  const spec = magnitudeSquared(rfft(windowed, nFft));
-  const freqs = rfftfreq(nFft, hopSec);
+  const spec = rfftMagnitude(windowed);
+  const freqs = rfftfreqN(osc.length, hopSec);
 
   let peak = 0;
-  let medianBand = 0;
   const bandIdx: number[] = [];
   const bandVals: number[] = [];
   for (let i = 0; i < freqs.length; i++) {
@@ -116,7 +114,7 @@ export function analyseVibrato(
     }
   }
   if (bandIdx.length < 3 || peak <= 0) return null;
-  medianBand = median(new Float64Array(bandVals)) || 1e-20;
+  const medianBand = median(new Float64Array(bandVals)) || 1e-20;
   const prominence = peak / medianBand;
 
   let idx = bandIdx[0]!;
@@ -168,36 +166,4 @@ export function analyseVibrato(
     center_hz: Math.round(med * 100) / 100,
     trusted: dur >= VIB_TRUSTED_SECONDS,
   };
-}
-
-function convolveSameReflect(signal: Float64Array, kernel: Float64Array): Float64Array {
-  const n = signal.length;
-  const m = kernel.length;
-  const half = Math.floor(m / 2);
-  const out = new Float64Array(n);
-  for (let i = 0; i < n; i++) {
-    let sum = 0;
-    for (let k = 0; k < m; k++) {
-      const j = reflect(i + k - half, n);
-      sum += signal[j]! * kernel[k]!;
-    }
-    out[i] = sum;
-  }
-  return out;
-}
-
-function reflect(i: number, n: number): number {
-  if (i < 0) return -i;
-  if (i >= n) return 2 * n - i - 2;
-  return i;
-}
-
-function hanning1(n: number): Float64Array {
-  const w = new Float64Array(n);
-  for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / n));
-  return w;
-}
-
-function nextPow2(n: number): number {
-  return 1 << Math.ceil(Math.log2(Math.max(2, n)));
 }

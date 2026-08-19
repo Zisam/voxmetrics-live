@@ -8,36 +8,26 @@ let tracker: F0Tracker | null = null;
 let buffer = new Float64Array(0);
 let running = false;
 let lastMetricsAt = 0;
-let sessionStart = 0;
-
-const f0History: F0Point[] = [];
-const voicedHzHistory: number[] = [];
-const MAX_F0_POINTS = 2000;
+let chartMedianHz = 0;
 
 function post(msg: WorkerOutMessage): void {
   self.postMessage(msg);
 }
 
-function medianHz(): number {
-  if (voicedHzHistory.length === 0) return 0;
-  const sorted = [...voicedHzHistory].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[mid - 1]! + sorted[mid]!) / 2
-    : sorted[mid]!;
-}
-
-function appendBuffer(samples: Float32Array): void {
+function appendBuffer(samples: Float32Array): number {
   const merged = new Float64Array(buffer.length + samples.length);
   merged.set(buffer);
   for (let i = 0; i < samples.length; i++) merged[buffer.length + i] = samples[i]!;
   buffer = merged;
 
   const maxSamples = rate * BUFFER_SECONDS;
-  if (buffer.length > maxSamples) {
-    buffer = buffer.slice(buffer.length - maxSamples);
-    tracker?.trim(maxSamples);
-  }
+  if (buffer.length <= maxSamples) return 0;
+
+  const drop = buffer.length - maxSamples;
+  const hop = Math.floor(0.005 * rate);
+  const alignedDrop = Math.floor(drop / hop) * hop;
+  buffer = buffer.slice(alignedDrop);
+  return Math.floor(alignedDrop / hop);
 }
 
 self.onmessage = (ev: MessageEvent<WorkerInMessage>) => {
@@ -46,11 +36,9 @@ self.onmessage = (ev: MessageEvent<WorkerInMessage>) => {
     rate = msg.sampleRate;
     tracker = new F0Tracker(rate);
     buffer = new Float64Array(0);
-    f0History.length = 0;
-    voicedHzHistory.length = 0;
+    chartMedianHz = 0;
     running = true;
     lastMetricsAt = performance.now();
-    sessionStart = performance.now();
     post({ type: "status", message: "Слушаю микрофон…" });
     return;
   }
@@ -63,28 +51,22 @@ self.onmessage = (ev: MessageEvent<WorkerInMessage>) => {
 
   if (msg.type !== "audio" || !running || !tracker) return;
 
-  appendBuffer(msg.samples);
+  const droppedFrames = appendBuffer(msg.samples);
+  tracker.syncBuffer(buffer, droppedFrames);
   const newFrames = tracker.append(msg.samples);
   if (newFrames.length === 0) return;
 
+  const med = chartMedianHz;
   const outPoints: F0Point[] = [];
   for (const frame of newFrames) {
-    if (frame.voiced) {
-      voicedHzHistory.push(frame.f0);
-      while (voicedHzHistory.length > 500) voicedHzHistory.shift();
-    }
-    const med = medianHz() || frame.f0 || 1;
-    const t = (performance.now() - sessionStart) / 1000;
-    const point: F0Point = {
-      t,
-      cents: frame.voiced ? 1200 * Math.log2(frame.f0 / med) : NaN,
+    const baseline = med || frame.f0 || 1;
+    outPoints.push({
+      t: frame.t,
+      cents: frame.voiced ? 1200 * Math.log2(frame.f0 / baseline) : NaN,
       voiced: frame.voiced,
-    };
-    f0History.push(point);
-    outPoints.push(point);
+    });
   }
 
-  while (f0History.length > MAX_F0_POINTS) f0History.shift();
   post({ type: "f0", points: outPoints });
 
   const now = performance.now();
@@ -92,6 +74,7 @@ self.onmessage = (ev: MessageEvent<WorkerInMessage>) => {
     lastMetricsAt = now;
     try {
       const { metrics, ltas } = analyseBuffer(buffer, rate);
+      if (metrics.f0_median_hz) chartMedianHz = metrics.f0_median_hz;
       post({ type: "metrics", metrics });
       if (ltas) {
         post({
