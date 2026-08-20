@@ -362,6 +362,133 @@ button:hover {
   }
 }
 
+.guide {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow-y: auto;
+  background: rgba(9, 11, 16, 0.97);
+  padding: 1rem 1rem 3rem;
+}
+
+.guide-inner {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  position: sticky;
+  top: 0;
+  margin: -1rem -1rem 0;
+  padding: 1rem;
+  background: rgba(9, 11, 16, 0.95);
+  border-bottom: 1px solid #1e2230;
+}
+
+.guide-head h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.guide-btn {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 700;
+}
+
+.guide-close {
+  background: #12141a;
+  color: #e8e6e3;
+  border: 1px solid #1e2230;
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.guide-close:hover {
+  background: #1a1e29;
+}
+
+.gdisclaimer {
+  margin: 1rem 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(157, 180, 245, 0.07);
+  border: 1px solid rgba(157, 180, 245, 0.2);
+  color: #9db4f5;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.gsection {
+  margin: 1.5rem 0;
+  padding: 1rem 1.1rem;
+  background: #12141a;
+  border: 1px solid #1e2230;
+  border-radius: 12px;
+}
+
+.gsection h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.gtriggers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.6rem;
+}
+
+.gchip {
+  font-size: 0.75rem;
+  color: #ffb457;
+  background: rgba(240, 163, 94, 0.08);
+  border: 1px solid rgba(240, 163, 94, 0.25);
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+}
+
+.gintro {
+  margin: 0 0 0.8rem;
+  color: #b0b5bd;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.gexercise {
+  margin: 0.8rem 0 0;
+  padding: 0.7rem 0.9rem;
+  background: #0f1117;
+  border: 1px solid #1e2230;
+  border-radius: 8px;
+}
+
+.gexercise h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.92rem;
+  color: #6ee7b7;
+}
+
+.gexercise ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #c8cdd4;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.gexercise li {
+  margin: 0.25rem 0;
+}
+
 @media (max-width: 900px) {
   .stage {
     flex-direction: column;

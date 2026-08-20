@@ -81,9 +81,15 @@ export function formantLevel(
   return "";
 }
 
-/** CPP orientation: higher = cleaner phonation; no hard norm (mic-dependent). */
-export const CPP_GOOD_DB = 10;
-export const CPP_OK_DB = 6;
+/**
+ * CPP orientation, calibrated to THIS implementation's scale (verified on
+ * glottal-like pulse trains: pure noise ~0.4 dB, HNR 0-6 dB → 2-4 dB,
+ * HNR 12-24 dB → 4-7.5 dB). Higher pitch reads ~2 dB lower on the same
+ * scale (f0 220 vs 110), so GOOD=4 stays reachable for high voices.
+ * Not comparable with Praat exports.
+ */
+export const CPP_GOOD_DB = 4;
+export const CPP_OK_DB = 2.5;
 
 export function jitterLevel(pct: number): QualityLevel {
   if (pct <= JITTER_GOOD_PCT) return "good";
