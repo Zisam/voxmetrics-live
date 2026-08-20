@@ -29,6 +29,7 @@ const fakeMetrics: MetricsSnapshot = {
   jitter_pct: null,
   shimmer_db: null,
   cpp_db: null,
+  tremolo: null,
 };
 
 function toFloat32(samples: ArrayLike<number>): Float32Array {
