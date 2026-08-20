@@ -24,6 +24,7 @@ export interface MetricsSnapshot {
   jitter_pct: number | null;
   shimmer_db: number | null;
   cpp_db: number | null;
+  tremolo: { rate_hz: number; depth_db: number } | null;
 }
 
 export interface F0Point {

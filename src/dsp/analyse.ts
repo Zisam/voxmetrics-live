@@ -14,6 +14,7 @@ import {
   localJitterPct,
   localShimmerDb,
 } from "./voice-quality.ts";
+import { analyseTremolo } from "./tremolo.ts";
 import { REF_BAND, SF_BAND } from "./constants.ts";
 
 export interface AnalyseOutput {
@@ -92,6 +93,8 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
     shimmer_db:
       x.length >= rate ? round2(localShimmerDb(frameRms, voiced)) : null,
     cpp_db: x.length >= rate ? round2(cepstralPeakProminenceDb(x, rate)) : null,
+    tremolo:
+      x.length >= rate ? analyseTremolo(frameRms, voiced, rate) : null,
   };
 
   return { metrics, ltas };

@@ -21,6 +21,7 @@ import {
   acceptWorkerStreamMessage,
 } from "./ui/session.ts";
 import { createMetricsPanel, type LtasSnapshot } from "./ui/metrics-panel.ts";
+import { computeCoachHints } from "./ui/coach.ts";
 import {
   createFrameScheduler,
   resetYRangeCache,
@@ -53,6 +54,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main class="stage">
     <div class="pitch-view">
       <div id="pitch-chart"></div>
+      <div class="coach-banner" id="coach-banner"></div>
     </div>
     <aside class="metrics-panel" id="metrics-panel"></aside>
   </main>
@@ -76,6 +78,34 @@ const pitchViewEl = document.querySelector<HTMLElement>(".pitch-view")!;
 const metricsPanel = createMetricsPanel(
   document.querySelector<HTMLElement>("#metrics-panel")!,
 );
+const coachBannerEl = document.querySelector<HTMLElement>("#coach-banner")!;
+let coachBannerText = "";
+let coachBannerTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showCoachBanner(text: string, level: "good" | "warn" | "info"): void {
+  if (text === coachBannerText) return;
+  coachBannerText = text;
+  coachBannerEl.textContent = text;
+  coachBannerEl.className = "coach-banner";
+  void coachBannerEl.offsetWidth;
+  coachBannerEl.classList.add(level, "show");
+  if (coachBannerTimer !== null) clearTimeout(coachBannerTimer);
+  coachBannerTimer = setTimeout(() => {
+    // allow the same hint to pop again while the problem persists
+    coachBannerText = "";
+    coachBannerTimer = null;
+  }, 2800);
+}
+
+function hideCoachBanner(): void {
+  coachBannerText = "";
+  if (coachBannerTimer !== null) {
+    clearTimeout(coachBannerTimer);
+    coachBannerTimer = null;
+  }
+  coachBannerEl.className = "coach-banner";
+  coachBannerEl.textContent = "";
+}
 
 const dspWorker = new Worker(new URL("./worker/dsp.ts", import.meta.url), {
   type: "module",
@@ -297,6 +327,7 @@ function clearChart(): void {
   pitchPlot.setData([[], []]);
   applyHud(null);
   metricsPanel.reset();
+  hideCoachBanner();
 }
 
 function updatePitchChart(points: F0Point[]): void {
@@ -318,6 +349,8 @@ function handleWorkerOut(msg: WorkerOutMessage): void {
   if (msg.type === "f0") updatePitchChart(msg.points);
   if (msg.type === "metrics") {
     metricsPanel.update(msg.metrics);
+    const [top] = computeCoachHints(msg.metrics);
+    if (top) showCoachBanner(top.text, top.level);
   }
   if (msg.type === "ltas") {
     const ltas: LtasSnapshot = { freqs: msg.freqs, db: msg.db };
