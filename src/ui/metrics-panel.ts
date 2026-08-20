@@ -1,9 +1,15 @@
 import type { MetricsSnapshot, VibratoResult } from "../types.ts";
 import { hzToMidi, midiToNoteLabel } from "../dsp/math.ts";
 import {
+  JITTER_GOOD_PCT,
+  JITTER_OK_PCT,
+  SHIMMER_GOOD_DB,
+  SHIMMER_OK_DB,
   SINGER_FORMANT_CLUSTER,
   VIB_TRUSTED_SECONDS,
 } from "../dsp/constants.ts";
+
+export { JITTER_GOOD_PCT, SHIMMER_GOOD_DB, SHIMMER_OK_DB };
 
 export interface LtasSnapshot {
   freqs: Float64Array;
@@ -73,6 +79,28 @@ export function formantLevel(
   if (hz == null) return "";
   if (hz >= range[0] && hz <= range[1]) return "good";
   return "";
+}
+
+/** CPP orientation: higher = cleaner phonation; no hard norm (mic-dependent). */
+export const CPP_GOOD_DB = 10;
+export const CPP_OK_DB = 6;
+
+export function jitterLevel(pct: number): QualityLevel {
+  if (pct <= JITTER_GOOD_PCT) return "good";
+  if (pct <= JITTER_OK_PCT) return "ok";
+  return "warn";
+}
+
+export function shimmerLevel(db: number): QualityLevel {
+  if (db <= SHIMMER_GOOD_DB) return "good";
+  if (db <= SHIMMER_OK_DB) return "ok";
+  return "warn";
+}
+
+export function cppLevel(db: number): QualityLevel {
+  if (db >= CPP_GOOD_DB) return "good";
+  if (db >= CPP_OK_DB) return "ok";
+  return "warn";
 }
 
 export function medianNoteLabel(hz: number | null): string {
@@ -258,6 +286,30 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
         </span>
       </div>
     </section>
+    <section class="mcard" title="Стабильность на ровном тоне; абсолютные значения зависят от микрофона — сравнивайте тренд">
+      <h2>Стабильность</h2>
+      <div class="mrow">
+        <span class="mlabel">Jitter</span>
+        <span class="mstack">
+          <span class="mval" id="mv-jitter">—</span>
+          <span class="mref">норма ≤ ${JITTER_GOOD_PCT} %</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Shimmer</span>
+        <span class="mstack">
+          <span class="mval" id="mv-shimmer">—</span>
+          <span class="mref">норма ≤ ${SHIMMER_GOOD_DB} дБ</span>
+        </span>
+      </div>
+      <div class="mrow">
+        <span class="mlabel">CPP</span>
+        <span class="mstack">
+          <span class="mval" id="mv-cpp">—</span>
+          <span class="mref">ориентир ≥ ${CPP_GOOD_DB} дБ</span>
+        </span>
+      </div>
+    </section>
     <section class="mcard" title="Эталонных значений нет: сравнивайте свой тренд между подходами">
       <h2>Спектр</h2>
       <div class="mrow">
@@ -305,6 +357,9 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
   const f2 = el("mv-f2");
   const f3 = el("mv-f3");
   const singer = el("mv-singer");
+  const jitter = el("mv-jitter");
+  const shimmer = el("mv-shimmer");
+  const cpp = el("mv-cpp");
   const ltasCanvas = root.querySelector<HTMLCanvasElement>("#mv-ltas")!;
   const ltasHint = el("mv-ltas-hint");
 
@@ -368,6 +423,28 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
         singer.textContent = "—";
         setQuality(singer, "");
       }
+
+      if (metrics.jitter_pct != null) {
+        jitter.textContent = `${metrics.jitter_pct.toFixed(2)} %`;
+        setQuality(jitter, jitterLevel(metrics.jitter_pct));
+      } else {
+        jitter.textContent = "—";
+        setQuality(jitter, "");
+      }
+      if (metrics.shimmer_db != null) {
+        shimmer.textContent = `${metrics.shimmer_db.toFixed(2)} дБ`;
+        setQuality(shimmer, shimmerLevel(metrics.shimmer_db));
+      } else {
+        shimmer.textContent = "—";
+        setQuality(shimmer, "");
+      }
+      if (metrics.cpp_db != null) {
+        cpp.textContent = `${metrics.cpp_db.toFixed(1)} дБ`;
+        setQuality(cpp, cppLevel(metrics.cpp_db));
+      } else {
+        cpp.textContent = "—";
+        setQuality(cpp, "");
+      }
     },
     updateLtas(ltas: LtasSnapshot): void {
       const drawn = drawLtas(ltasCanvas, ltas);
@@ -386,6 +463,9 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
         f2,
         f3,
         singer,
+        jitter,
+        shimmer,
+        cpp,
       ]) {
         el.textContent = "—";
         setQuality(el, "");

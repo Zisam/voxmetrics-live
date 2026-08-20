@@ -9,6 +9,11 @@ import {
   singerFormant,
   spectralCentroid,
 } from "./ltas.ts";
+import {
+  cepstralPeakProminenceDb,
+  localJitterPct,
+  localShimmerDb,
+} from "./voice-quality.ts";
 import { REF_BAND, SF_BAND } from "./constants.ts";
 
 export interface AnalyseOutput {
@@ -16,8 +21,12 @@ export interface AnalyseOutput {
   ltas: { freqs: Float64Array; db: Float64Array } | null;
 }
 
+function round2(v: number | null): number | null {
+  return v == null ? null : Math.round(v * 100) / 100;
+}
+
 export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
-  const { f0, voiced } = trackF0(x, rate);
+  const { f0, voiced, rawF0, frameRms } = trackF0(x, rate);
   const voicedF0: number[] = [];
   for (let i = 0; i < f0.length; i++) {
     if (voiced[i]) voicedF0.push(f0[i]!);
@@ -78,6 +87,11 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
     formants_hz: x.length >= rate / 2 ? analyseFormants(x, rate) : [],
     singer_formant_hz: singer?.hz ?? null,
     singer_formant_db: singer?.prominenceDb ?? null,
+    jitter_pct:
+      x.length >= rate ? round2(localJitterPct(rawF0, voiced)) : null,
+    shimmer_db:
+      x.length >= rate ? round2(localShimmerDb(frameRms, voiced)) : null,
+    cpp_db: x.length >= rate ? round2(cepstralPeakProminenceDb(x, rate)) : null,
   };
 
   return { metrics, ltas };

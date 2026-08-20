@@ -12,6 +12,15 @@ export const SF_BAND: readonly [number, number] = [2200.0, 3400.0];
 export const REF_BAND: readonly [number, number] = [300.0, 1000.0];
 /** Singer's-formant cluster (Hz) — shared by DSP measurement and UI text. */
 export const SINGER_FORMANT_CLUSTER: readonly [number, number] = [2400, 3200];
+/**
+ * Voice-quality thresholds. Jitter/shimmer are frame-sampled (5 ms hop, 50 ms
+ * window) which dilutes cycle-to-cycle variation ~7-15x vs Praat cycle norms;
+ * thresholds below are calibrated for THIS measurement, not Praat exports.
+ */
+export const JITTER_GOOD_PCT = 0.15;
+export const JITTER_OK_PCT = 0.3;
+export const SHIMMER_GOOD_DB = 0.05;
+export const SHIMMER_OK_DB = 0.1;
 export const FORMANT_MAX_BW = 500.0;
 export const FORMANT_MERGE_HZ = 200.0;
 export const BUFFER_SECONDS = 15;
