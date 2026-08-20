@@ -22,6 +22,7 @@ import {
 } from "./ui/session.ts";
 import { createMetricsPanel, type LtasSnapshot } from "./ui/metrics-panel.ts";
 import { computeCoachHints } from "./ui/coach.ts";
+import { renderGuide } from "./ui/guide.ts";
 import {
   createFrameScheduler,
   resetYRangeCache,
@@ -42,6 +43,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <input type="range" id="gate" min="-90" max="-20" step="1" value="-50" />
         <span class="gate-value" id="gate-value">-50 дБ</span>
       </label>
+      <button id="guide-btn" type="button" class="guide-btn" title="Руководство по тренировке">?</button>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
     </div>
@@ -58,6 +60,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     </div>
     <aside class="metrics-panel" id="metrics-panel"></aside>
   </main>
+  <div class="guide" id="guide" hidden></div>
   <footer class="footer">
     <a href="https://github.com/Zisam/voxmetrics-live">GitHub</a>
     · алгоритмы из <a href="https://github.com/Zisam/voxmetrics">voxmetrics</a>
@@ -79,6 +82,29 @@ const metricsPanel = createMetricsPanel(
   document.querySelector<HTMLElement>("#metrics-panel")!,
 );
 const coachBannerEl = document.querySelector<HTMLElement>("#coach-banner")!;
+const guideEl = document.querySelector<HTMLElement>("#guide")!;
+const guideBtnEl = document.querySelector<HTMLButtonElement>("#guide-btn")!;
+
+renderGuide(guideEl);
+guideEl
+  .querySelector<HTMLButtonElement>(".guide-close")!
+  .addEventListener("click", hideGuide);
+guideBtnEl.addEventListener("click", () => {
+  guideEl.hidden ? showGuide() : hideGuide();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") hideGuide();
+});
+
+function showGuide(): void {
+  guideEl.hidden = false;
+  guideBtnEl.textContent = "✕";
+}
+
+function hideGuide(): void {
+  guideEl.hidden = true;
+  guideBtnEl.textContent = "?";
+}
 let coachBannerText = "";
 let coachBannerTimer: ReturnType<typeof setTimeout> | null = null;
 

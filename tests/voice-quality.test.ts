@@ -94,3 +94,87 @@ describe("cepstralPeakProminenceDb", () => {
     expect(cepstralPeakProminenceDb(new Float64Array(500), RATE)).toBeNull();
   });
 });
+
+describe("CPP harmonic-to-noise sensitivity", () => {
+  /** Glottal-like pulse train (flat harmonic comb) + noise floor at hnrDb. */
+  function pulsePlusNoise(f0: number, hnrDb: number, dur: number): Float64Array {
+    const n = Math.floor(RATE * dur);
+    const out = new Float64Array(n);
+    const period = RATE / f0;
+    let nextPulse = 0;
+    let seed = 4242;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x3fffffff - 1;
+    };
+    const pulseA = 0.4;
+    const trainRms = pulseA * Math.sqrt(1 / period);
+    const noiseRms = trainRms / 10 ** (hnrDb / 20);
+    for (let i = 0; i < n; i++) {
+      if (i >= nextPulse) {
+        out[i] = pulseA;
+        nextPulse += period;
+      }
+      out[i] += noiseRms * Math.SQRT2 * rand();
+    }
+    return out;
+  }
+
+  it("pure noise stays near zero", () => {
+    const n = Math.floor(RATE * 2);
+    const noise = new Float64Array(n);
+    let seed = 7;
+    for (let i = 0; i < n; i++) {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      noise[i] = seed / 0x3fffffff - 1;
+    }
+    const cpp = cepstralPeakProminenceDb(noise, RATE)!;
+    expect(cpp).toBeLessThan(1);
+  });
+
+  it("grows monotonically with harmonic-to-noise ratio", () => {
+    const levels = [0, 6, 12, 24, 40].map((hnr) =>
+      cepstralPeakProminenceDb(pulsePlusNoise(110, hnr, 3), RATE)!,
+    );
+    for (let i = 1; i < levels.length; i++) {
+      expect(levels[i]!).toBeGreaterThan(levels[i - 1]!);
+    }
+    console.log("CPP vs HNR:", levels.map((v) => v.toFixed(2)).join(" "));
+  });
+
+  it("voice-like signal at healthy HNR lands in the calibrated band", () => {
+    const healthy = cepstralPeakProminenceDb(pulsePlusNoise(110, 20, 3), RATE)!;
+    // anchors for CPP_GOOD_DB=4 / CPP_OK_DB=2.5 calibration
+    expect(healthy).toBeGreaterThan(4);
+    expect(healthy).toBeLessThan(10);
+
+    const breathy = cepstralPeakProminenceDb(pulsePlusNoise(110, 3, 3), RATE)!;
+    expect(breathy).toBeLessThan(healthy);
+  });
+
+  it("declining-harmonic comb also discriminates HNR", () => {
+    const comb = (hnrDb: number) => {
+      const n = Math.floor(RATE * 3);
+      const out = new Float64Array(n);
+      const harmonics: [number, number][] = [];
+      for (let k = 1; k <= 12; k++) harmonics.push([k, 0.85 ** (k - 1)]);
+      const noiseRms = (0.35 / 10 ** (hnrDb / 20)) * 5;
+      let phase = 0;
+      let seed = 4242;
+      const rand = () => {
+        seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+        return seed / 0x3fffffff - 1;
+      };
+      for (let i = 0; i < n; i++) {
+        phase += (2 * Math.PI * 220) / RATE;
+        let s = 0;
+        for (const [k, a] of harmonics) s += a * Math.sin(k * phase);
+        out[i] = s * 0.2 + noiseRms * Math.SQRT2 * rand();
+      }
+      return out;
+    };
+    const clean = cepstralPeakProminenceDb(comb(30), RATE)!;
+    const noisy = cepstralPeakProminenceDb(comb(3), RATE)!;
+    expect(clean).toBeGreaterThan(noisy);
+  });
+});
