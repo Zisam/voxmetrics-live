@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  CPP_GOOD_DB,
+  CPP_OK_DB,
   F1_RANGE,
   F2_RANGE,
   F3_RANGE,
+  cppLevel,
   fmtDb,
   fmtRangeRef,
   formantLevel,
+  jitterLevel,
   medianNoteLabel,
+  SHIMMER_GOOD_DB,
+  SHIMMER_OK_DB,
+  shimmerLevel,
   SINGER_FORMANT_BAND,
   SINGER_FORMANT_GOOD_DB,
   SINGER_FORMANT_OK_DB,
@@ -23,6 +30,10 @@ import {
   vibRegularityLevel,
   vibSteadyLevel,
 } from "../src/ui/metrics-panel.ts";
+import {
+  JITTER_GOOD_PCT,
+  JITTER_OK_PCT,
+} from "../src/dsp/constants.ts";
 
 describe("vibRateLevel", () => {
   it("marks typical operatic vibrato rate as good", () => {
@@ -129,6 +140,29 @@ describe("singer formant reference consistency (UI text vs levels)", () => {
     expect(SINGER_FORMANT_BAND[0]).toBe(2400);
     expect(SINGER_FORMANT_BAND[1]).toBe(3200);
     expect(SINGER_FORMANT_GOOD_DB).toBeGreaterThan(SINGER_FORMANT_OK_DB);
+  });
+});
+
+describe("jitter/shimmer/cpp levels match reference constants", () => {
+  it("jitter: good at threshold, ok just above, warn beyond ok", () => {
+    expect(jitterLevel(JITTER_GOOD_PCT / 2)).toBe("good");
+    expect(jitterLevel(JITTER_GOOD_PCT)).toBe("good");
+    expect(jitterLevel(JITTER_GOOD_PCT + 0.01)).toBe("ok");
+    expect(jitterLevel(JITTER_OK_PCT)).toBe("ok");
+    expect(jitterLevel(JITTER_OK_PCT + 0.01)).toBe("warn");
+  });
+
+  it("shimmer thresholds classify monotonically", () => {
+    expect(shimmerLevel(SHIMMER_GOOD_DB / 2)).toBe("good");
+    expect(shimmerLevel(SHIMMER_OK_DB - 0.001)).toBe("ok");
+    expect(shimmerLevel(SHIMMER_OK_DB + 0.001)).toBe("warn");
+  });
+
+  it("cpp thresholds classify monotonically", () => {
+    expect(cppLevel(CPP_GOOD_DB)).toBe("good");
+    expect(cppLevel(CPP_OK_DB)).toBe("ok");
+    expect(cppLevel(CPP_OK_DB - 0.01)).toBe("warn");
+    expect(cppLevel(CPP_GOOD_DB + 1)).toBe("good");
   });
 });
 

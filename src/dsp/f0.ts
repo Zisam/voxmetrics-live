@@ -12,6 +12,10 @@ export interface F0Track {
   times: Float64Array;
   f0: Float64Array;
   voiced: Uint8Array;
+  /** Unsmoothed period-based F0 per frame (0 when unvoiced). */
+  rawF0: Float64Array;
+  /** RMS of the mean-removed (unwindowed) frame (0 when unvoiced). */
+  frameRms: Float64Array;
 }
 
 /**
@@ -125,6 +129,8 @@ export function trackF0(x: Float64Array, rate: number): F0Track {
 
   const times = new Float64Array(nFrames);
   const f0 = new Float64Array(nFrames);
+  const rawF0 = new Float64Array(nFrames);
+  const frameRms = new Float64Array(nFrames);
   const voiced = new Uint8Array(nFrames);
 
   const seg = new Float64Array(frame);
@@ -134,6 +140,12 @@ export function trackF0(x: Float64Array, rate: number): F0Track {
     let mean = 0;
     for (let j = 0; j < frame; j++) mean += seg[j]!;
     mean /= frame;
+    let rawRms = 0;
+    for (let j = 0; j < frame; j++) {
+      const v = seg[j]! - mean;
+      rawRms += v * v;
+    }
+    rawRms = Math.sqrt(rawRms / frame);
     for (let j = 0; j < frame; j++) seg[j] = (seg[j]! - mean) * window[j]!;
 
     const energy = rms(seg);
@@ -154,10 +166,12 @@ export function trackF0(x: Float64Array, rate: number): F0Track {
     if (lag === null || acf[Math.round(lag)]! < 0.35) continue;
 
     f0[i] = rate / lag;
+    rawF0[i] = rate / lag;
+    frameRms[i] = rawRms;
     voiced[i] = 1;
   }
 
-  return { times, f0, voiced };
+  return { times, f0, voiced, rawF0, frameRms };
 }
 
 export function longestVoicedRun(voiced: Uint8Array): [number, number] | null {
@@ -279,12 +293,12 @@ export class F0Tracker {
   }
 
   /** Process frames not yet extracted from the buffer set by syncBuffer(). */
-  append(): { t: number; f0: number; voiced: boolean }[] {
+  append(): { t: number; f0: number; voiced: boolean; rawF0: number; rms: number }[] {
     let energySum = 0;
     for (let i = 0; i < this.buffer.length; i++) energySum += this.buffer[i]! * this.buffer[i]!;
     this.rmsAll = Math.sqrt(energySum / this.buffer.length) || 1e-12;
 
-    const out: { t: number; f0: number; voiced: boolean }[] = [];
+    const out: { t: number; f0: number; voiced: boolean; rawF0: number; rms: number }[] = [];
     while (this.nextFrame * this.hop + this.frame <= this.buffer.length) {
       const i = this.nextFrame;
       const start = i * this.hop;
@@ -292,6 +306,12 @@ export class F0Tracker {
       let mean = 0;
       for (let j = 0; j < this.frame; j++) mean += this.seg[j]!;
       mean /= this.frame;
+      let rawRms = 0;
+      for (let j = 0; j < this.frame; j++) {
+        const v = this.seg[j]! - mean;
+        rawRms += v * v;
+      }
+      rawRms = Math.sqrt(rawRms / this.frame);
       for (let j = 0; j < this.frame; j++) this.seg[j] = (this.seg[j]! - mean) * this.window[j]!;
 
       const energy = rms(this.seg);
@@ -299,7 +319,7 @@ export class F0Tracker {
       const t = streamSample / this.rate;
       if (energy < 0.1 * this.rmsAll) {
         this.voicedSmooth = [];
-        out.push({ t, f0: 0, voiced: false });
+        out.push({ t, f0: 0, voiced: false, rawF0: 0, rms: rawRms });
         this.nextFrame++;
         continue;
       }
@@ -311,7 +331,7 @@ export class F0Tracker {
       const acfFull = irfft(acfSpec, this.nFft);
       if (acfFull[0]! <= 0) {
         this.voicedSmooth = [];
-        out.push({ t, f0: 0, voiced: false });
+        out.push({ t, f0: 0, voiced: false, rawF0: 0, rms: rawRms });
         this.nextFrame++;
         continue;
       }
@@ -322,13 +342,13 @@ export class F0Tracker {
       if (lag !== null) lag = foldToFundamental(this.acf, lag, this.lagMax, this.rate);
       if (lag === null || this.acf[Math.round(lag)]! < 0.35) {
         this.voicedSmooth = [];
-        out.push({ t, f0: 0, voiced: false });
+        out.push({ t, f0: 0, voiced: false, rawF0: 0, rms: rawRms });
       } else {
         const raw = this.rate / lag;
         this.voicedSmooth.push(raw);
         if (this.voicedSmooth.length > F0_MEDIAN_WIN) this.voicedSmooth.shift();
         const f0 = medianOf(this.voicedSmooth);
-        out.push({ t, f0, voiced: true });
+        out.push({ t, f0, voiced: true, rawF0: raw, rms: rawRms });
       }
       this.nextFrame++;
     }

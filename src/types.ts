@@ -21,6 +21,9 @@ export interface MetricsSnapshot {
   formants_hz: number[];
   singer_formant_hz: number | null;
   singer_formant_db: number | null;
+  jitter_pct: number | null;
+  shimmer_db: number | null;
+  cpp_db: number | null;
 }
 
 export interface F0Point {

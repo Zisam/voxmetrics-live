@@ -26,6 +26,9 @@ const fakeMetrics: MetricsSnapshot = {
   formants_hz: [],
   singer_formant_hz: null,
   singer_formant_db: null,
+  jitter_pct: null,
+  shimmer_db: null,
+  cpp_db: null,
 };
 
 function toFloat32(samples: ArrayLike<number>): Float32Array {

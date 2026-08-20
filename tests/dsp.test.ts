@@ -398,6 +398,17 @@ describe("singerFormant", () => {
     expect(metrics.singer_formant_hz!).toBeLessThan(3200);
     expect(metrics.singer_formant_db).toBeGreaterThan(6);
   });
+
+  it("surfaces jitter/shimmer/cpp through analyseBuffer", () => {
+    const sig = synth(0, 0, 220, 3);
+    const { metrics } = analyseBuffer(sig, RATE);
+    expect(metrics.jitter_pct).not.toBeNull();
+    expect(metrics.jitter_pct!).toBeLessThan(0.15);
+    expect(metrics.shimmer_db).not.toBeNull();
+    expect(metrics.shimmer_db!).toBeLessThanOrEqual(0.05);
+    expect(metrics.cpp_db).not.toBeNull();
+    expect(metrics.cpp_db!).toBeGreaterThan(0.4);
+  });
 });
 
 describe("analyseH1H2", () => {
