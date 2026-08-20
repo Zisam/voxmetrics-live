@@ -55,7 +55,9 @@ export function bandMeanDb(
 /**
  * Singer's formant ("ring"): the strongest peak in the SINGER_FORMANT_CLUSTER
  * band measured as dB prominence over the mean of adjacent baseline bands
- * (1.5–2.4 and 3.2–4.2 kHz). Returns null when the LTAS does not cover the
+ * (1.5–2.4 and 3.2–4.2 kHz). Baseline bins are limited to the LTAS dynamic
+ * range (peak − 30 dB) so a near-zero noise floor between harmonics cannot
+ * inflate the prominence. Returns null when the LTAS does not cover the
  * cluster.
  */
 export function singerFormant(
@@ -70,10 +72,18 @@ export function singerFormant(
     }
     return vals;
   };
+
+  let peakAll = -Infinity;
+  for (const v of db) {
+    if (v > peakAll) peakAll = v;
+  }
+  if (!Number.isFinite(peakAll)) return null;
+  const floorDb = peakAll - 30;
+
   const mean = (vals: number[]): number | null => {
     if (!vals.length) return null;
     let s = 0;
-    for (const v of vals) s += v;
+    for (const v of vals) s += Math.max(v, floorDb);
     return s / vals.length;
   };
 

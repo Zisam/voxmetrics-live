@@ -361,7 +361,8 @@ describe("singerFormant", () => {
     expect(sf!.hz).toBeGreaterThan(2400);
     expect(sf!.hz).toBeLessThan(3200);
     expect(sf!.hz).toBeCloseTo(2936.6, -1);
-    expect(sf!.prominenceDb).toBeGreaterThan(6);
+    // weak 10th harmonic (amp 0.06) over the clipped floor: modest prominence
+    expect(sf!.prominenceDb).toBeGreaterThan(5);
   });
 
   it("returns null when LTAS does not cover the cluster", () => {
@@ -396,7 +397,7 @@ describe("singerFormant", () => {
     expect(metrics.singer_formant_hz).not.toBeNull();
     expect(metrics.singer_formant_hz!).toBeGreaterThan(2400);
     expect(metrics.singer_formant_hz!).toBeLessThan(3200);
-    expect(metrics.singer_formant_db).toBeGreaterThan(6);
+    expect(metrics.singer_formant_db).toBeGreaterThan(5);
   });
 
   it("surfaces jitter/shimmer/cpp through analyseBuffer", () => {
