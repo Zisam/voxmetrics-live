@@ -11,10 +11,36 @@ export type GuideMetricId =
   | "pitch"
   | "start";
 
+export interface VibratoReference {
+  artist: string;
+  source: string;
+  measurements: { hz: number; cents: number }[];
+}
+
+/** Performer vibrato measurements used as training references. */
+export const VIBRATO_REFERENCES: VibratoReference[] = [
+  {
+    artist: "Ruki (the GazettE)",
+    source: "«Dogma»",
+    measurements: [
+      { hz: 5.8, cents: 190 },
+      { hz: 5.3, cents: 132 },
+    ],
+  },
+  {
+    artist: "茅原実里",
+    source: "",
+    measurements: [{ hz: 5.64, cents: 146 }],
+  },
+];
+
 export interface GuideExercise {
   name: string;
   steps: string[];
 }
+
+export const VIBRATO_TARGET =
+  "Ориентир по референсам: волна около 5.5 Гц с размахом 150 центов. На графике жёлтый коридор задаёт этот размах (±75 центов вокруг ноты), а зелёная синусоида 5.5 Гц заполняет его от края до края — цельтесь в неё (кнопка «Эталон» в тулбаре).";
 
 export interface GuideSection {
   id: GuideMetricId;
@@ -23,6 +49,9 @@ export interface GuideSection {
   triggers: string[];
   intro: string;
   exercises: GuideExercise[];
+  /** Optional reference table (vibrato performers). */
+  references?: VibratoReference[];
+  target?: string;
 }
 
 export const GUIDE_DISCLAIMER =
@@ -52,6 +81,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
     triggers: ["Вибрато быстрее!", "Вибрато медленнее!", "Вибрато уже!", "Вибрато шире!", "Волна ровнее!"],
     intro:
       "Вибрато — естественная волна высоты. Оно появляется само, когда опора дыхания и артикуляция в порядке, поэтому не форсируйте его напрямую: сначала ровный тон, потом свобода.",
+    references: VIBRATO_REFERENCES,
+    target: VIBRATO_TARGET,
     exercises: [
       {
         name: "Сирена",
@@ -215,6 +246,29 @@ export function renderGuide(root: HTMLElement): void {
             : ""
         }
         <p class="gintro">${s.intro}</p>
+        ${
+          s.references?.length
+            ? `
+        <div class="grefs">
+          <table class="greftable">
+            <thead>
+              <tr><th>Исполнитель</th><th>Частота</th><th>Размах</th></tr>
+            </thead>
+            <tbody>
+              ${s.references
+                .flatMap((r) =>
+                  r.measurements.map((m) => {
+                    const src = r.source ? ` <span class="grefsrc">(${r.source})</span>` : "";
+                    return `<tr><td>${r.artist}${src}</td><td>${m.hz} Гц</td><td>${m.cents} центов</td></tr>`;
+                  }),
+                )
+                .join("")}
+            </tbody>
+          </table>
+          ${s.target ? `<p class="gtarget">${s.target}</p>` : ""}
+        </div>`
+            : ""
+        }
         ${s.exercises
           .map(
             (e) => `

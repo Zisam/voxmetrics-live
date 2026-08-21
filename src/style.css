@@ -292,6 +292,21 @@ button:hover {
   color: #5b8def;
 }
 
+.export-btn {
+  background: #12141a;
+  color: #9db4f5;
+  border: 1px solid #1e2230;
+  border-radius: 8px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.78rem;
+  margin-right: 0.75rem;
+  cursor: pointer;
+}
+
+.export-btn:hover {
+  background: #1a1e29;
+}
+
 .uplot {
   font-family: inherit;
 }
@@ -402,6 +417,23 @@ button:hover {
   font-weight: 700;
 }
 
+.vib-guide-btn {
+  background: #12141a;
+  color: #b0b5bd;
+  border: 1px solid #1e2230;
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.vib-guide-btn.on {
+  background: rgba(110, 231, 183, 0.12);
+  color: #6ee7b7;
+  border-color: rgba(110, 231, 183, 0.35);
+}
+
 .guide-close {
   background: #12141a;
   color: #e8e6e3;
@@ -487,6 +519,49 @@ button:hover {
 
 .gexercise li {
   margin: 0.25rem 0;
+}
+
+.grefs {
+  margin: 0 0 0.8rem;
+}
+
+.greftable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.greftable th,
+.greftable td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid #1e2230;
+}
+
+.greftable th {
+  color: #8b9199;
+  font-weight: 500;
+}
+
+.greftable td {
+  color: #c8cdd4;
+  font-variant-numeric: tabular-nums;
+}
+
+.grefsrc {
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+
+.gtarget {
+  margin: 0.6rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: rgba(110, 231, 183, 0.06);
+  border: 1px solid rgba(110, 231, 183, 0.2);
+  color: #9dd9c0;
+  font-size: 0.87rem;
+  line-height: 1.45;
 }
 
 @media (max-width: 900px) {
