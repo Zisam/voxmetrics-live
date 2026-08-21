@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GUIDE_DISCLAIMER,
   GUIDE_SECTIONS,
+  VIBRATO_REFERENCES,
   type GuideMetricId,
 } from "../src/ui/guide.ts";
 
@@ -73,5 +74,37 @@ describe("guide content", () => {
     expect(GUIDE_DISCLAIMER).toContain("нельзя");
     expect(GUIDE_DISCLAIMER).toMatch(/дискомфорт|боль/);
     expect(GUIDE_DISCLAIMER).toMatch(/педагог|фониатр/);
+  });
+
+  it("vibrato section carries the performer references", () => {
+    const vib = GUIDE_SECTIONS.find((s) => s.id === "vibrato")!;
+    expect(vib.references).toBe(VIBRATO_REFERENCES);
+
+    // Ruki (the GazettE, Dogma): 5.8/190 and 5.3/132
+    const ruki = VIBRATO_REFERENCES.find((r) => r.artist.includes("Ruki"))!;
+    expect(ruki.source).toContain("Dogma");
+    expect(ruki.measurements).toContainEqual({ hz: 5.8, cents: 190 });
+    expect(ruki.measurements).toContainEqual({ hz: 5.3, cents: 132 });
+
+    // 茅原実里: 5.64/146
+    const chihara = VIBRATO_REFERENCES.find((r) =>
+      r.artist.includes("茅原実里"),
+    )!;
+    expect(chihara.measurements).toContainEqual({ hz: 5.64, cents: 146 });
+
+    // target text names the 5.5 Hz / 150-cent zone and the overlay
+    expect(vib.target).toContain("5.5 Гц");
+    expect(vib.target).toContain("150 центов");
+    expect(vib.target).toContain("±75");
+  });
+
+  it("references cluster around the target zone", () => {
+    const all = VIBRATO_REFERENCES.flatMap((r) => r.measurements);
+    for (const m of all) {
+      expect(m.hz).toBeGreaterThan(5);
+      expect(m.hz).toBeLessThan(6);
+      expect(m.cents).toBeGreaterThanOrEqual(130);
+      expect(m.cents).toBeLessThanOrEqual(190);
+    }
   });
 });

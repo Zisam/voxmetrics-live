@@ -24,6 +24,12 @@ import { createMetricsPanel, type LtasSnapshot } from "./ui/metrics-panel.ts";
 import { computeCoachHints } from "./ui/coach.ts";
 import { renderGuide } from "./ui/guide.ts";
 import {
+  computeVibratoGuide,
+  drawVibratoGuide,
+  visibleVoicedMedian,
+} from "./ui/vibrato-guide.ts";
+import { SessionLog, tsvFilename } from "./ui/session-log.ts";
+import {
   createFrameScheduler,
   resetYRangeCache,
   yRangeWithHysteresis,
@@ -44,6 +50,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <span class="gate-value" id="gate-value">-50 дБ</span>
       </label>
       <button id="guide-btn" type="button" class="guide-btn" title="Руководство по тренировке">?</button>
+      <button id="vib-guide-btn" type="button" class="vib-guide-btn" title="Коридор 150 центов (±75) вокруг ноты и эталонная синусоида 5.5 Гц на графике">Эталон</button>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
     </div>
@@ -62,6 +69,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   </main>
   <div class="guide" id="guide" hidden></div>
   <footer class="footer">
+    <button id="export-tsv" type="button" class="export-btn" title="Выгрузить метрики сессии в TSV (Excel/Google Sheets)">Скачать метрики</button>
     <a href="https://github.com/Zisam/voxmetrics-live">GitHub</a>
     · алгоритмы из <a href="https://github.com/Zisam/voxmetrics">voxmetrics</a>
   </footer>
@@ -84,6 +92,44 @@ const metricsPanel = createMetricsPanel(
 const coachBannerEl = document.querySelector<HTMLElement>("#coach-banner")!;
 const guideEl = document.querySelector<HTMLElement>("#guide")!;
 const guideBtnEl = document.querySelector<HTMLButtonElement>("#guide-btn")!;
+const vibGuideBtnEl =
+  document.querySelector<HTMLButtonElement>("#vib-guide-btn")!;
+const exportBtnEl = document.querySelector<HTMLButtonElement>("#export-tsv")!;
+const sessionLog = new SessionLog();
+
+function downloadTsv(): void {
+  if (sessionLog.size() === 0) {
+    statusEl.textContent = "Метрик пока нет — спойте хотя бы одну фразу";
+    return;
+  }
+  const blob = new Blob([sessionLog.toTsv()], {
+    type: "text/tab-separated-values",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = tsvFilename();
+  a.click();
+  URL.revokeObjectURL(url);
+  statusEl.textContent = `Скачано строк метрик: ${sessionLog.size()}`;
+}
+
+exportBtnEl.addEventListener("click", downloadTsv);
+
+let vibGuideOn =
+  localStorage.getItem("voxmetrics.vibguide") !== "0";
+
+function applyVibGuideState(): void {
+  vibGuideBtnEl.classList.toggle("on", vibGuideOn);
+  localStorage.setItem("voxmetrics.vibguide", vibGuideOn ? "1" : "0");
+}
+
+vibGuideBtnEl.addEventListener("click", () => {
+  vibGuideOn = !vibGuideOn;
+  applyVibGuideState();
+  pitchPlot.setData([pitchX, pitchMidi]);
+});
+applyVibGuideState();
 
 renderGuide(guideEl);
 guideEl
@@ -242,6 +288,10 @@ function chartSize(): { width: number; height: number } {
 }
 
 function drawNoteGrid(u: uPlot): void {
+  if (vibGuideOn) {
+    const center = visibleVoicedMedian(pitchMidi);
+    drawVibratoGuide(u, center == null ? null : computeVibratoGuide(center));
+  }
   const { ctx } = u;
   const yScale = u.scales.y;
   if (yScale.min == null || yScale.max == null) return;
@@ -375,6 +425,7 @@ function handleWorkerOut(msg: WorkerOutMessage): void {
   if (msg.type === "f0") updatePitchChart(msg.points);
   if (msg.type === "metrics") {
     metricsPanel.update(msg.metrics);
+    if (active) sessionLog.add(msg.metrics);
     const [top] = computeCoachHints(msg.metrics);
     if (top) showCoachBanner(top.text, top.level);
   }
@@ -423,6 +474,9 @@ async function start(): Promise<void> {
         autoGainControl: false,
       },
     });
+
+    // mic granted: the previous session's exportable data is no longer needed
+    sessionLog.clear();
 
     try {
       audioCtx = new AudioContext();
