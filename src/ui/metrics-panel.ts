@@ -49,6 +49,16 @@ export function vibRegularityLevel(v: number): QualityLevel {
   return "warn";
 }
 
+/** Cycle-period stability (CV) of the vibrato wave; lower = steadier tempo. */
+export const VIB_PERIODCV_GOOD = 0.1;
+export const VIB_PERIODCV_OK = 0.2;
+
+export function vibPeriodCvLevel(cv: number): QualityLevel {
+  if (cv <= VIB_PERIODCV_GOOD) return "good";
+  if (cv <= VIB_PERIODCV_OK) return "ok";
+  return "warn";
+}
+
 export function vibSteadyLevel(steadySec: number, trusted: boolean): QualityLevel {
   if (trusted || steadySec >= VIB_STEADY_TRUSTED_SEC) return "good";
   if (steadySec >= 1) return "ok";
@@ -229,6 +239,13 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
         </span>
       </div>
       <div class="mrow">
+        <span class="mlabel">Стаб. темпа</span>
+        <span class="mstack">
+          <span class="mval" id="mv-vib-pcv">—</span>
+          <span class="mref">норма ≤ ${Math.round(VIB_PERIODCV_GOOD * 100)} %</span>
+        </span>
+      </div>
+      <div class="mrow">
         <span class="mlabel">Ровный тон</span>
         <span class="mstack">
           <span class="mval" id="mv-vib-steady">—</span>
@@ -351,6 +368,7 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
   const vibRate = el("mv-vib-rate");
   const vibExtent = el("mv-vib-extent");
   const vibReg = el("mv-vib-reg");
+  const vibPcv = el("mv-vib-pcv");
   const vibSteady = el("mv-vib-steady");
   const vibHint = el("mv-vib-hint");
   const toneMedian = el("mv-tone-median");
@@ -371,7 +389,7 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
 
   function renderVibrato(v: VibratoResult | null): void {
     if (!v) {
-      for (const el of [vibRate, vibExtent, vibReg, vibSteady]) {
+      for (const el of [vibRate, vibExtent, vibReg, vibPcv, vibSteady]) {
         el.textContent = "—";
         setQuality(el, "");
       }
@@ -388,6 +406,13 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
     } else {
       vibReg.textContent = `${Math.round(v.regularity * 100)} %`;
       setQuality(vibReg, vibRegularityLevel(v.regularity));
+    }
+    if (v.period_cv == null) {
+      vibPcv.textContent = "—";
+      setQuality(vibPcv, "");
+    } else {
+      vibPcv.textContent = `${Math.round(v.period_cv * 100)} %`;
+      setQuality(vibPcv, vibPeriodCvLevel(v.period_cv));
     }
     vibSteady.textContent = `${v.steady_seconds.toFixed(1)} с${
       v.trusted ? " · надёжно" : ""

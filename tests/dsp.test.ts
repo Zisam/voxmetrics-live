@@ -241,6 +241,9 @@ describe("analyseVibrato", () => {
     expect(v).not.toBeNull();
     expect(v!.rate_hz).toBeGreaterThan(5.85);
     expect(v!.rate_hz).toBeLessThan(6.15);
+    // clean synthetic vibrato: metronome-steady tempo
+    expect(v!.period_cv).not.toBeNull();
+    expect(v!.period_cv!).toBeLessThan(0.15);
   });
 
   it("extent within 10%", () => {

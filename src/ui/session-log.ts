@@ -10,7 +10,7 @@ export interface SessionLogEntry {
 export const MAX_SESSION_ENTRIES = 5000;
 
 export const TSV_HEADER =
-  "time\tduration_s\tvoiced_share\tf0_median_hz\tvib_rate_hz\tvib_extent_cents\tvib_regularity_pct\tvib_steady_s\tvib_trusted\ttremolo_rate_hz\ttremolo_depth_db\tjitter_pct\tshimmer_db\tcpp_db\th1_h2_db\tsf_balance_db\tspectral_centroid_hz\tf1_hz\tf2_hz\tf3_hz\tsinger_formant_hz\tsinger_formant_db";
+  "time\tduration_s\tvoiced_share\tf0_median_hz\tvib_rate_hz\tvib_extent_cents\tvib_regularity_pct\tvib_period_cv\tvib_steady_s\tvib_trusted\ttremolo_rate_hz\ttremolo_depth_db\tjitter_pct\tshimmer_db\tcpp_db\th1_h2_db\tsf_balance_db\tspectral_centroid_hz\tf1_hz\tf2_hz\tf3_hz\tsinger_formant_hz\tsinger_formant_db";
 
 function num(v: number | null | undefined): string {
   return v == null || Number.isNaN(v) ? "" : String(v);
@@ -48,6 +48,7 @@ export class SessionLog {
           num(v?.rate_hz),
           num(v?.extent_cents_direct),
           v?.regularity == null ? "" : String(Math.round(v.regularity * 100)),
+          num(v?.period_cv),
           num(v?.steady_seconds),
           v == null ? "" : v.trusted ? "1" : "0",
           num(tr?.rate_hz),
