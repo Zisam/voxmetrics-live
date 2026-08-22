@@ -307,15 +307,6 @@ button:hover {
   background: #1a1e29;
 }
 
-.export-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.export-btn:disabled:hover {
-  background: #12141a;
-}
-
 .uplot {
   font-family: inherit;
 }

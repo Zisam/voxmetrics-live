@@ -70,8 +70,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <div class="guide" id="guide" hidden></div>
   <footer class="footer">
     <button id="export-tsv" type="button" class="export-btn" title="Выгрузить метрики сессии в TSV (Excel/Google Sheets)">Скачать метрики</button>
-    <a href="https://github.com/Zisam/voxmetrics-live">GitHub</a>
-    · алгоритмы из <a href="https://github.com/Zisam/voxmetrics">voxmetrics</a>
+    <a href="https://github.com/Zisam/voxmetrics-live" target="_blank" rel="noreferrer">GitHub</a>
   </footer>
 `;
 
@@ -118,12 +117,7 @@ function downloadTsv(): void {
   statusEl.textContent = `Скачано строк метрик: ${sessionLog.size()}`;
 }
 
-function refreshExportBtn(): void {
-  exportBtnEl.disabled = sessionLog.size() === 0;
-}
-
 exportBtnEl.addEventListener("click", downloadTsv);
-refreshExportBtn();
 
 let vibGuideOn =
   localStorage.getItem("voxmetrics.vibguide") !== "0";
@@ -434,10 +428,7 @@ function handleWorkerOut(msg: WorkerOutMessage): void {
   if (msg.type === "f0") updatePitchChart(msg.points);
   if (msg.type === "metrics") {
     metricsPanel.update(msg.metrics);
-    if (active) {
-      sessionLog.add(msg.metrics);
-      refreshExportBtn();
-    }
+    if (active) sessionLog.add(msg.metrics);
     const [top] = computeCoachHints(msg.metrics);
     if (top) showCoachBanner(top.text, top.level);
   }
@@ -489,7 +480,6 @@ async function start(): Promise<void> {
 
     // mic granted: the previous session's exportable data is no longer needed
     sessionLog.clear();
-    refreshExportBtn();
 
     try {
       audioCtx = new AudioContext();
