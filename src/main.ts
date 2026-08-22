@@ -336,6 +336,9 @@ function drawNowMarker(u: uPlot): void {
 const pitchPlot = new uPlot(
   {
     ...chartSize(),
+    // the inline legend table overflows the plot box and buries the footer
+    // under it (intercepting clicks); it is redundant for a single series
+    legend: { show: false },
     series: [
       {},
       {
