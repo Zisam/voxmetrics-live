@@ -60,8 +60,8 @@ describe("capture-processor worklet", () => {
   it("captures the right channel by default on stereo input", async () => {
     const reg = await loadWorklet();
     const proc = newInstance(reg);
-    const left = new Float32Array(4096).fill(-1);
-    const right = new Float32Array(4096);
+    const left = new Float32Array(1024).fill(-1);
+    const right = new Float32Array(1024);
     for (let i = 0; i < right.length; i++) right[i] = i;
     proc.process([[left, right]]);
     expect(posted.length).toBe(1);
@@ -74,8 +74,8 @@ describe("capture-processor worklet", () => {
     (proc.port.onmessage as (e: unknown) => void)({
       data: { type: "channel", value: "left" },
     });
-    const left = new Float32Array(4096).fill(7);
-    const right = new Float32Array(4096).fill(9);
+    const left = new Float32Array(1024).fill(7);
+    const right = new Float32Array(1024).fill(9);
     proc.process([[left, right]]);
     expect(posted.length).toBe(1);
     expect(posted[0]!.every((v) => v === 7)).toBe(true);
@@ -84,22 +84,23 @@ describe("capture-processor worklet", () => {
   it("falls back to the single channel on mono input", async () => {
     const reg = await loadWorklet();
     const proc = newInstance(reg);
-    const mono = new Float32Array(4096).fill(3);
+    const mono = new Float32Array(1024).fill(3);
     proc.process([[mono]]);
     expect(posted.length).toBe(1);
     expect(posted[0]!.every((v) => v === 3)).toBe(true);
   });
 
-  it("batches samples into 4096-sample chunks across process calls", async () => {
+  it("batches samples into 1024-sample chunks across process calls", async () => {
     const reg = await loadWorklet();
     const proc = newInstance(reg);
-    proc.process([[new Float32Array(1000).fill(1)]]);
+    proc.process([[new Float32Array(500).fill(1)]]);
     expect(posted.length).toBe(0);
-    proc.process([[new Float32Array(1000).fill(1)]]);
-    expect(posted.length).toBe(0);
-    proc.process([[new Float32Array(3000).fill(1)]]);
-    expect(posted.length).toBe(1);
-    expect(posted[0]!.length).toBe(4096);
+    proc.process([[new Float32Array(500).fill(1)]]);
+    expect(posted.length).toBe(0); // 1000 < 1024, still buffering
+    proc.process([[new Float32Array(2200).fill(1)]]);
+    // 500 + 500 + 2200 = 3200 → 3 full chunks posted
+    expect(posted.length).toBe(3);
+    expect(posted[0]!.length).toBe(1024);
     expect(posted[0]!.every((v) => v === 1)).toBe(true);
   });
 

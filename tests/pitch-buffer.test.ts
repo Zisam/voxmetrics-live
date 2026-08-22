@@ -140,6 +140,37 @@ describe("appendScrollingPitchPoints", () => {
       expect(xs[i]!).toBeGreaterThanOrEqual(xs[i - 1]!);
     }
   });
+
+  it("latency compensation leads the curve off the right edge", () => {
+    const scroll = createScrollState();
+    const xs: number[] = [];
+    const midi: (number | null)[] = [];
+    appendScrollingPitchPoints(
+      scroll,
+      xs,
+      midi,
+      [point(1, 440, true)],
+      undefined,
+      1,
+      0.12,
+    );
+    // newest point sits 0.12 s ahead of the raw NOW_X
+    expect(xs[xs.length - 1]).toBeCloseTo(NOW_X - 0.12, 5);
+    // later batch keeps the same offset
+    appendScrollingPitchPoints(
+      scroll,
+      xs,
+      midi,
+      [point(1.093, 440, true)],
+      undefined,
+      1.093,
+      0.12,
+    );
+    expect(xs[xs.length - 1]).toBeCloseTo(NOW_X - 0.12, 5);
+    for (let i = 1; i < xs.length; i++) {
+      expect(xs[i]!).toBeGreaterThanOrEqual(xs[i - 1]!);
+    }
+  });
 });
 
 describe("pitchXRange", () => {

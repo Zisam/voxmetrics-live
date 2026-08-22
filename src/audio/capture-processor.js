@@ -1,7 +1,9 @@
 // Self-contained plain JS: Vite inlines this worklet as a data: URL, so it
 // must not import anything or use TypeScript-only syntax. Keep the channel
 // selection semantics in sync with tests/capture-processor.test.ts.
-const CHUNK_SAMPLES = 4096;
+// Small chunk (1024 ≈ 21 ms at 48 kHz) keeps the F0 pipeline latency low;
+// the pitch curve arrives within ~a frame of the sung sound.
+const CHUNK_SAMPLES = 1024;
 
 class CaptureProcessor extends AudioWorkletProcessor {
   constructor() {

@@ -107,10 +107,12 @@ export function tickWallScroll(
 }
 
 /**
- * Append F0 batch anchored to stream timestamps: the newest point lands at
- * NOW_X and older points place at NOW_X - (anchorT - t). Existing points are
- * reconciled against the new anchor so wall/stream drift never produces
- * unsorted x (uPlot draws backward segments otherwise).
+ * Append F0 batch anchored to stream timestamps. Points are placed on a
+ * grid whose newest position is `windowSec - latencyCompSec`: the trace
+ * leads the right edge by the capture/processing latency (worklet chunk
+ * accumulation + input path) so the sung wave lines up with wall-clock
+ * overlays (click marks, reference sine). Existing points are reconciled
+ * against the new anchor so wall/stream drift never produces unsorted x.
  */
 export function appendScrollingPitchPoints(
   scroll: ScrollState,
@@ -119,24 +121,26 @@ export function appendScrollingPitchPoints(
   points: F0Point[],
   windowSec = PITCH_WINDOW_SEC,
   wallSec = performance.now() / 1000,
+  latencyCompSec = 0,
 ): PitchBatchResult {
   if (!points.length) return { hudPoint: null, silenceBatch: true };
 
   if (scroll.lastWallSec == null) scroll.lastWallSec = wallSec;
 
+  const anchorX = windowSec - latencyCompSec;
   const batchNewestT = points[points.length - 1]!.t;
 
   if (scroll.anchorT != null && batchNewestT > scroll.anchorT) {
-    // Net-correct existing series: expected x(t) = NOW_X - (anchor' - t).
-    // Current x(t) ≈ NOW_X - (anchor - t) - wallElapsed (ticks).
+    // Net-correct existing series: expected x(t) = anchorX - (anchor' - t).
+    // Current x(t) ≈ anchorX - (anchor - t) - wallElapsed (ticks).
     // Needed left-shift = streamAdvance - wallElapsed; ≈ 0 in steady state.
     // A right-shift (wall ran ahead of a stalled stream) may only undo drift:
-    // never push points beyond NOW_X.
+    // never push points beyond anchorX.
     const wallElapsed = wallSec - (scroll.anchorWallSec ?? wallSec);
     const streamAdvance = batchNewestT - scroll.anchorT;
     let delta = streamAdvance - wallElapsed;
     if (delta < 0 && xs.length > 0) {
-      const maxRightShift = windowSec - xs[xs.length - 1]!;
+      const maxRightShift = anchorX - xs[xs.length - 1]!;
       delta = Math.max(delta, -Math.max(0, maxRightShift));
     }
     if (delta !== 0) shiftSeriesLeft(xs, midi, delta);
@@ -153,7 +157,7 @@ export function appendScrollingPitchPoints(
   for (const p of points) {
     // dedup guard: stream must stay strictly increasing for sorted x
     if (scroll.lastT != null && p.t <= scroll.lastT) continue;
-    const x = windowSec - (scroll.anchorT! - p.t);
+    const x = anchorX - (scroll.anchorT! - p.t);
     if (x < 0) {
       scroll.lastT = p.t;
       continue;

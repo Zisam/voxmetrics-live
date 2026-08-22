@@ -62,6 +62,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <input type="range" id="bpm" min="55" max="95" step="1" value="83" />
         <span class="gate-value" id="bpm-value">83 BPM · 5.5 Гц</span>
       </label>
+      <label class="gate-control" title="Компенсация задержки голоса на графике (захват + обработка): кривая сдвигается влево, чтобы совпадать с метками кликов">
+        <span class="gate-label">Сдвиг</span>
+        <input type="range" id="latency" min="0" max="300" step="5" value="60" />
+        <span class="gate-value" id="latency-value">60 мс</span>
+      </label>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
     </div>
@@ -134,6 +139,35 @@ const metronomeBtnEl =
   document.querySelector<HTMLButtonElement>("#metronome-btn")!;
 const bpmSliderEl = document.querySelector<HTMLInputElement>("#bpm")!;
 const bpmValueEl = document.querySelector<HTMLSpanElement>("#bpm-value")!;
+const latencySliderEl =
+  document.querySelector<HTMLInputElement>("#latency")!;
+const latencyValueEl =
+  document.querySelector<HTMLSpanElement>("#latency-value")!;
+
+/** Pitch-trace latency compensation (s): leads the curve off the right
+ * edge by the capture/processing delay so it aligns with wall-clock
+ * overlays (click marks, sine). */
+let voiceLatencySec = 0.06;
+
+function storedLatencyMs(): number {
+  const v = Number.parseFloat(
+    localStorage.getItem("voxmetrics.latency") ?? "",
+  );
+  if (!Number.isFinite(v)) return 60;
+  return Math.min(300, Math.max(0, Math.round(v)));
+}
+
+function applyLatency(): void {
+  const ms = Number.parseInt(latencySliderEl.value, 10);
+  voiceLatencySec = ms / 1000;
+  latencyValueEl.textContent = `${ms} мс`;
+  localStorage.setItem("voxmetrics.latency", String(ms));
+}
+
+latencySliderEl.value = String(storedLatencyMs());
+latencySliderEl.addEventListener("input", applyLatency);
+voiceLatencySec = storedLatencyMs() / 1000;
+latencyValueEl.textContent = `${storedLatencyMs()} мс`;
 
 /** Wave tempo in Hz — shared by the reference sine and the metronome. */
 let refVibHz = VIB_REF_HZ;
@@ -325,6 +359,7 @@ function renderChartFrame(): void {
         batch,
         undefined,
         wallSec,
+        voiceLatencySec,
       );
     }
     pendingHud = resolveHudPoint(result);
