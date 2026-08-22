@@ -3,6 +3,8 @@ export interface VibratoResult {
   extent_cents_rms: number;
   extent_cents_direct: number;
   regularity: number | null;
+  /** Cycle-to-cycle period variation (CV) of the F0 wave; lower = steadier tempo. */
+  period_cv: number | null;
   steady_seconds: number;
   center_hz: number;
   trusted: boolean;

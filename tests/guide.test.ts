@@ -92,10 +92,11 @@ describe("guide content", () => {
     )!;
     expect(chihara.measurements).toContainEqual({ hz: 5.64, cents: 146 });
 
-    // target text names the 5.5 Hz / 150-cent zone and the overlay
+    // target text names the 5.5 Hz / 82 BPM subdivision scheme, 150-cent zone, tempo stability
     expect(vib.target).toContain("5.5 Гц");
+    expect(vib.target).toContain("82 BPM");
     expect(vib.target).toContain("150 центов");
-    expect(vib.target).toContain("±75");
+    expect(vib.target).toContain("≤ 10");
   });
 
   it("references cluster around the target zone", () => {

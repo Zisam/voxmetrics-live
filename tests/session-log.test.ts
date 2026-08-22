@@ -19,6 +19,7 @@ function snapshot(over: Partial<MetricsSnapshot> = {}): MetricsSnapshot {
       extent_cents_rms: 80,
       extent_cents_direct: 100,
       regularity: 0.75,
+      period_cv: 0.08,
       steady_seconds: 5,
       center_hz: 220,
       trusted: true,
@@ -52,8 +53,9 @@ describe("SessionLog", () => {
     expect(cols[4]).toBe("5.3"); // vib_rate_hz
     expect(cols[5]).toBe("100"); // vib_extent_cents_direct
     expect(cols[6]).toBe("75"); // regularity as percent
-    expect(cols[8]).toBe("1"); // trusted
-    expect(cols[17]).toBe("500"); // f1
+    expect(cols[7]).toBe("0.08"); // period_cv
+    expect(cols[9]).toBe("1"); // trusted
+    expect(cols[18]).toBe("500"); // f1
     // column count matches header
     expect(cols.length).toBe(TSV_HEADER.split("\t").length);
   });
@@ -73,10 +75,11 @@ describe("SessionLog", () => {
     );
     const cols = log.toTsv().split("\n")[1]!.split("\t");
     expect(cols[4]).toBe(""); // vib_rate_hz
-    expect(cols[8]).toBe(""); // vib_trusted
-    expect(cols[9]).toBe(""); // tremolo_rate_hz
-    expect(cols[11]).toBe(""); // jitter_pct
-    expect(cols[17]).toBe(""); // f1
+    expect(cols[7]).toBe(""); // vib_period_cv
+    expect(cols[9]).toBe(""); // vib_trusted
+    expect(cols[10]).toBe(""); // tremolo_rate_hz
+    expect(cols[12]).toBe(""); // jitter_pct
+    expect(cols[18]).toBe(""); // f1
     expect(cols.every((c) => c !== "null" && c !== "NaN")).toBe(true);
   });
 
@@ -100,8 +103,8 @@ describe("SessionLog", () => {
     const log = new SessionLog();
     log.add(snapshot({ tremolo: { rate_hz: 5.1, depth_db: 4.2 } }));
     const cols = log.toTsv().split("\n")[1]!.split("\t");
-    expect(cols[9]).toBe("5.1");
-    expect(cols[10]).toBe("4.2");
+    expect(cols[10]).toBe("5.1");
+    expect(cols[11]).toBe("4.2");
   });
 });
 

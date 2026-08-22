@@ -157,13 +157,46 @@ export function analyseVibrato(
 
   if (extentDirect < VIB_MIN_EXTENT || prominence < VIB_MIN_PROMINENCE) return null;
 
+  const cv = periodCvOf(osc, hopSec);
+
   return {
     rate_hz: Math.round(vibRate * 100) / 100,
     extent_cents_rms: Math.round(extentRms * 10) / 10,
     extent_cents_direct: Math.round(extentDirect * 10) / 10,
     regularity: vibratoRegularity(osc, new Float64Array(p2p), fs, vibRate),
+    period_cv: cv == null ? null : Math.round(cv * 1000) / 1000,
     steady_seconds: Math.round(dur * 100) / 100,
     center_hz: Math.round(med * 100) / 100,
     trusted: dur >= VIB_TRUSTED_SECONDS,
   };
+}
+
+/**
+ * Cycle-to-cycle period variation of the detrended F0 wave (rising zero
+ * crossings). Low CV = metronome-steady tempo; high CV = drifting program.
+ * Reference anchors: Makenai ~0.07, trained-user chunking ~0.11, DOGMA ~0.32.
+ * Period filter spans VIB_MIN/VIB_MAX periods with hop-quantization margin.
+ */
+export function periodCvOf(
+  osc: Float64Array,
+  hopSec: number,
+): number | null {
+  const crossings: number[] = [];
+  for (let i = 1; i < osc.length; i++) {
+    if (osc[i - 1]! <= 0 && osc[i]! > 0) crossings.push(i);
+  }
+  if (crossings.length < 4) return null;
+  const periods: number[] = [];
+  for (let i = 1; i < crossings.length; i++) {
+    const p = (crossings[i]! - crossings[i - 1]!) * hopSec;
+    if (p > 0.075 && p < 0.52) periods.push(p);
+  }
+  if (periods.length < 3) return null;
+  let mean = 0;
+  for (const p of periods) mean += p;
+  mean /= periods.length;
+  if (mean <= 0) return null;
+  let v = 0;
+  for (const p of periods) v += (p - mean) ** 2;
+  return Math.sqrt(v / periods.length) / mean;
 }

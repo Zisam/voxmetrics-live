@@ -10,10 +10,11 @@ function snapshot(over: Partial<MetricsSnapshot> = {}): MetricsSnapshot {
     voiced_share: 0.9,
     f0_median_hz: 220,
     vibrato: {
-      rate_hz: 5.5,
+      rate_hz: 5.3,
       extent_cents_rms: 80,
       extent_cents_direct: 100,
-      regularity: 0.8,
+      regularity: 0.75,
+      period_cv: 0.08,
       steady_seconds: 5,
       center_hz: 220,
       trusted: true,

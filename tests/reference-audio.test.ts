@@ -18,9 +18,9 @@ import type { MetricsSnapshot } from "../src/types.ts";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
 
-const REFERENCES: { file: string; vibRate: [number, number]; vibExtent: [number, number] }[] = [
-  { file: "Makenai_vibrato_01.wav", vibRate: [5.2, 6.0], vibExtent: [120, 170] },
-  { file: "DOGMA_vibrato_01.wav", vibRate: [5.3, 6.2], vibExtent: [160, 250] },
+const REFERENCES: { file: string; vibRate: [number, number]; vibExtent: [number, number]; pcvMax: number }[] = [
+  { file: "Makenai_vibrato_01.wav", vibRate: [5.2, 6.0], vibExtent: [120, 170], pcvMax: 0.12 },
+  { file: "DOGMA_vibrato_01.wav", vibRate: [5.3, 6.2], vibExtent: [160, 250], pcvMax: 0.4 },
 ];
 
 const available = REFERENCES.every((r) => existsSync(join(FIXTURES, r.file)));
@@ -105,6 +105,9 @@ describe.skipIf(!available)(
         expect(vib!.rate_hz, ref.file).toBeLessThan(ref.vibRate[1]);
         expect(vib!.extent_cents_direct, ref.file).toBeGreaterThan(ref.vibExtent[0]);
         expect(vib!.extent_cents_direct, ref.file).toBeLessThan(ref.vibExtent[1]);
+        // cycle-period stability anchor (Makenai ~0.07, DOGMA ~0.32)
+        expect(vib!.period_cv, ref.file).not.toBeNull();
+        expect(vib!.period_cv!, ref.file).toBeLessThan(ref.pcvMax);
       }
     });
 

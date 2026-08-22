@@ -25,7 +25,10 @@ import {
   VIB_REGULARITY_GOOD,
   VIB_REGULARITY_OK,
   VIB_STEADY_TRUSTED_SEC,
+  VIB_PERIODCV_GOOD,
+  VIB_PERIODCV_OK,
   vibExtentLevel,
+  vibPeriodCvLevel,
   vibRateLevel,
   vibRegularityLevel,
   vibSteadyLevel,
@@ -71,6 +74,17 @@ describe("vibRegularityLevel", () => {
     expect(vibRegularityLevel(0.8)).toBe("good");
     expect(vibRegularityLevel(0.5)).toBe("ok");
     expect(vibRegularityLevel(0.1)).toBe("warn");
+  });
+});
+
+describe("vibPeriodCvLevel", () => {
+  it("classifies tempo stability by CV thresholds", () => {
+    expect(vibPeriodCvLevel(0.05)).toBe("good");
+    expect(vibPeriodCvLevel(VIB_PERIODCV_GOOD)).toBe("good");
+    expect(vibPeriodCvLevel(VIB_PERIODCV_GOOD + 0.001)).toBe("ok");
+    expect(vibPeriodCvLevel(VIB_PERIODCV_OK)).toBe("ok");
+    expect(vibPeriodCvLevel(VIB_PERIODCV_OK + 0.001)).toBe("warn");
+    expect(vibPeriodCvLevel(0.3)).toBe("warn");
   });
 });
 
