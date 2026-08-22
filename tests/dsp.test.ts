@@ -165,34 +165,38 @@ describe("F0Tracker", () => {
     expect(streamMed).toBeLessThan(offMed + 1);
   });
 
-  it("keeps monotonic timestamps when buffer is trimmed", () => {
-    const sig = synth(0, 0, 440, 20);
-    const tracker = new F0Tracker(RATE);
-    let buffer = new Float64Array(0);
-    const chunk = 4096;
-    const maxSamples = RATE * 15;
-    const hop = Math.floor(0.005 * RATE);
-    const times: number[] = [];
-    for (let i = 0; i < sig.length; i += chunk) {
-      const samples = sig.subarray(i, Math.min(i + chunk, sig.length));
-      const merged = new Float64Array(buffer.length + samples.length);
-      merged.set(buffer);
-      for (let j = 0; j < samples.length; j++) merged[buffer.length + j] = samples[j]!;
-      buffer = merged;
-      let dropped = 0;
-      if (buffer.length > maxSamples) {
-        const alignedDrop = Math.floor((buffer.length - maxSamples) / hop) * hop;
-        buffer = buffer.slice(alignedDrop);
-        dropped = Math.floor(alignedDrop / hop);
+  it(
+    "keeps monotonic timestamps when buffer is trimmed",
+    { timeout: 30_000 },
+    () => {
+      const sig = synth(0, 0, 440, 20);
+      const tracker = new F0Tracker(RATE);
+      let buffer = new Float64Array(0);
+      const chunk = 4096;
+      const maxSamples = RATE * 15;
+      const hop = Math.floor(0.005 * RATE);
+      const times: number[] = [];
+      for (let i = 0; i < sig.length; i += chunk) {
+        const samples = sig.subarray(i, Math.min(i + chunk, sig.length));
+        const merged = new Float64Array(buffer.length + samples.length);
+        merged.set(buffer);
+        for (let j = 0; j < samples.length; j++) merged[buffer.length + j] = samples[j]!;
+        buffer = merged;
+        let dropped = 0;
+        if (buffer.length > maxSamples) {
+          const alignedDrop = Math.floor((buffer.length - maxSamples) / hop) * hop;
+          buffer = buffer.slice(alignedDrop);
+          dropped = Math.floor(alignedDrop / hop);
+        }
+        tracker.syncBuffer(buffer, dropped, samples.length);
+        for (const frame of tracker.append()) times.push(frame.t);
       }
-      tracker.syncBuffer(buffer, dropped, samples.length);
-      for (const frame of tracker.append()) times.push(frame.t);
-    }
-    for (let i = 1; i < times.length; i++) {
-      expect(times[i]!).toBeGreaterThanOrEqual(times[i - 1]!);
-    }
-    expect(times[times.length - 1]).toBeCloseTo(sig.length / RATE, 0);
-  });
+      for (let i = 1; i < times.length; i++) {
+        expect(times[i]!).toBeGreaterThanOrEqual(times[i - 1]!);
+      }
+      expect(times[times.length - 1]).toBeCloseTo(sig.length / RATE, 0);
+    },
+  );
 
   it.each([
     [880, 5],

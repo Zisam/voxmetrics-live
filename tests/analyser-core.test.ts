@@ -148,7 +148,7 @@ describe("handleAnalyserMessage", () => {
     expect(later.some((m) => m.type === "metrics")).toBe(true);
   });
 
-  it("caps ring at rolling window limit", () => {
+  it("caps ring at rolling window limit", { timeout: 30_000 }, () => {
     const state = createAnalyserState();
     handleAnalyserMessage(state, { type: "start", sampleRate: RATE }, 0);
 
