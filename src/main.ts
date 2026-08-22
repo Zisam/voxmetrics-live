@@ -64,8 +64,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       </label>
       <label class="gate-control" title="Компенсация задержки голоса на графике (захват + обработка): кривая сдвигается влево, чтобы совпадать с метками кликов">
         <span class="gate-label">Сдвиг</span>
-        <input type="range" id="latency" min="0" max="300" step="5" value="60" />
-        <span class="gate-value" id="latency-value">60 мс</span>
+        <input type="range" id="latency" min="0" max="300" step="5" value="120" />
+        <span class="gate-value" id="latency-value">120 мс</span>
       </label>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
@@ -153,7 +153,9 @@ function storedLatencyMs(): number {
   const v = Number.parseFloat(
     localStorage.getItem("voxmetrics.latency") ?? "",
   );
-  if (!Number.isFinite(v)) return 60;
+  // default calibrated on MOTU M4 (worklet chunk + WASAPI shared-mode
+  // input buffers): ~21 + ~100 ms
+  if (!Number.isFinite(v)) return 120;
   return Math.min(300, Math.max(0, Math.round(v)));
 }
 
