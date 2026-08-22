@@ -40,35 +40,53 @@ import {
   yRangeWithHysteresis,
 } from "./ui/chart-frame.ts";
 
-document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
+import {
+  getLocale,
+  LOCALES,
+  LOCALE_LABELS,
+  setLocale,
+  storedLocale,
+  t,
+  fmt,
+  type Locale,
+} from "./ui/i18n.ts";
+import { coachText, type CoachKey } from "./ui/coach.ts";
+
+setLocale(storedLocale());
+
+function toolbarHtml(d: ReturnType<typeof t>): string {
+  return `
   <header class="toolbar">
     <div class="toolbar-left">
       <h1>voxmetrics live</h1>
-      <button id="toggle" type="button">Начать</button>
-      <select id="channel" class="channel-select" title="Канал аудиоинтерфейса">
-        <option value="right">Микрофон (R)</option>
-        <option value="left">Гитара (L)</option>
+      <button id="toggle" type="button">${d.startBtn}</button>
+      <select id="channel" class="channel-select">
+        <option value="right">${d.channelMic}</option>
+        <option value="left">${d.channelGuitar}</option>
       </select>
-      <label class="gate-control" title="Порог шумоподавления (RMS, дБFS)">
-        <span class="gate-label">Гейт</span>
+      <label class="gate-control">
+        <span class="gate-label" id="gate-label">${d.gateLabel}</span>
         <input type="range" id="gate" min="-90" max="-20" step="1" value="-50" />
-        <span class="gate-value" id="gate-value">-50 дБ</span>
+        <span class="gate-value" id="gate-value">-50 ${d.dbUnit}</span>
       </label>
-      <button id="guide-btn" type="button" class="guide-btn" title="Руководство по тренировке">?</button>
-      <button id="vib-guide-btn" type="button" class="vib-guide-btn" title="Коридор 150 центов (±75) вокруг ноты и эталонная синусоида на графике">Эталон</button>
-      <button id="metronome-btn" type="button" class="vib-guide-btn" title="Метроном: клик на каждый 4-й качок волны; темп задаёт и синусоиду">Метроном</button>
-      <label class="gate-control" title="Темп метронома и синусоиды (клик = каждый 4-й качок волны)">
-        <span class="gate-label">Темп</span>
+      <button id="guide-btn" type="button" class="guide-btn">${d.guideBtn}</button>
+      <button id="vib-guide-btn" type="button" class="vib-guide-btn">${d.refBtn}</button>
+      <button id="metronome-btn" type="button" class="vib-guide-btn">${d.metronomeBtn}</button>
+      <label class="gate-control">
+        <span class="gate-label" id="tempo-label">${d.tempoLabel}</span>
         <input type="range" id="bpm" min="55" max="95" step="1" value="83" />
-        <span class="gate-value" id="bpm-value">83 BPM · 5.5 Гц</span>
+        <span class="gate-value" id="bpm-value">83 BPM · 5.5 ${d.hzUnit}</span>
       </label>
-      <label class="gate-control" title="Компенсация задержки голоса на графике (захват + обработка): кривая сдвигается влево, чтобы совпадать с метками кликов">
-        <span class="gate-label">Сдвиг</span>
+      <label class="gate-control">
+        <span class="gate-label" id="shift-label">${d.shiftLabel}</span>
         <input type="range" id="latency" min="0" max="300" step="5" value="120" />
-        <span class="gate-value" id="latency-value">120 мс</span>
+        <span class="gate-value" id="latency-value">120 ${d.msUnit}</span>
       </label>
-      <span id="status" class="status">Готов</span>
-      <span class="privacy">Аудио не покидает браузер</span>
+      <select id="locale" class="channel-select" title="Language / 言語">
+        ${LOCALES.map((l) => `<option value="${l}">${LOCALE_LABELS[l]}</option>`).join("")}
+      </select>
+      <span id="status" class="status">${d.statusReady}</span>
+      <span class="privacy" id="privacy">${d.privacy}</span>
     </div>
     <div class="hud" id="hud">
       <span class="hud-note" id="current-note">—</span>
@@ -85,12 +103,13 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   </main>
   <div class="guide" id="guide" hidden></div>
   <footer class="footer">
-    <button id="export-tsv" type="button" class="export-btn" title="Выгрузить метрики сессии в TSV (Excel/Google Sheets)">Скачать метрики</button>
+    <button id="export-tsv" type="button" class="export-btn">${d.exportBtn}</button>
     <a href="https://github.com/Zisam/voxmetrics-live" target="_blank" rel="noreferrer">GitHub</a>
-  </footer>
-`;
+  </footer>`;
+}
 
-const toggleBtn = document.querySelector<HTMLButtonElement>("#toggle")!;
+document.querySelector<HTMLDivElement>("#app")!.innerHTML = toolbarHtml(t());
+
 const channelSelectEl =
   document.querySelector<HTMLSelectElement>("#channel")!;
 const gateSliderEl = document.querySelector<HTMLInputElement>("#gate")!;
@@ -101,20 +120,71 @@ const currentCentsEl = document.querySelector<HTMLSpanElement>("#current-cents")
 const currentHzEl = document.querySelector<HTMLSpanElement>("#current-hz")!;
 const pitchChartEl = document.querySelector<HTMLDivElement>("#pitch-chart")!;
 const pitchViewEl = document.querySelector<HTMLElement>(".pitch-view")!;
-const metricsPanel = createMetricsPanel(
-  document.querySelector<HTMLElement>("#metrics-panel")!,
-);
+const metricsPanelEl = document.querySelector<HTMLElement>("#metrics-panel")!;
+let metricsPanel = createMetricsPanel(metricsPanelEl);
 const coachBannerEl = document.querySelector<HTMLElement>("#coach-banner")!;
 const guideEl = document.querySelector<HTMLElement>("#guide")!;
 const guideBtnEl = document.querySelector<HTMLButtonElement>("#guide-btn")!;
 const vibGuideBtnEl =
   document.querySelector<HTMLButtonElement>("#vib-guide-btn")!;
+const metronomeBtnEl =
+  document.querySelector<HTMLButtonElement>("#metronome-btn")!;
+const gateLabelEl = document.querySelector<HTMLSpanElement>("#gate-label")!;
+const tempoLabelEl = document.querySelector<HTMLSpanElement>("#tempo-label")!;
+const shiftLabelEl = document.querySelector<HTMLSpanElement>("#shift-label")!;
+const privacyEl = document.querySelector<HTMLSpanElement>("#privacy")!;
+const toggleBtn = document.querySelector<HTMLButtonElement>("#toggle")!;
 const exportBtnEl = document.querySelector<HTMLButtonElement>("#export-tsv")!;
 const sessionLog = new SessionLog();
 
+// --- language switcher ---------------------------------------------------
+const localeSelectEl = document.querySelector<HTMLSelectElement>("#locale")!;
+localeSelectEl.value = getLocale();
+
+/**
+ * Update every text surface in place (no innerHTML swap: the uPlot canvas
+ * and all listeners must survive). Rebuilds only the metrics panel and the
+ * guide, which render their own markup.
+ */
+function applyLocale(locale: Locale): void {
+  setLocale(locale);
+  localStorage.setItem("voxmetrics.locale", locale);
+  const d = t();
+
+  toggleBtn.textContent = active ? d.stopBtn : d.startBtn;
+  exportBtnEl.textContent = d.exportBtn;
+  statusEl.textContent = d.statusReady;
+  privacyEl.textContent = d.privacy;
+
+  const channelOpts = channelSelectEl.options;
+  channelOpts[0]!.textContent = d.channelMic;
+  channelOpts[1]!.textContent = d.channelGuitar;
+
+  gateLabelEl.textContent = d.gateLabel;
+  tempoLabelEl.textContent = d.tempoLabel;
+  shiftLabelEl.textContent = d.shiftLabel;
+  refBtnEl.textContent = d.refBtn;
+  metronomeBtnEl.textContent = d.metronomeBtn;
+  guideBtnEl.textContent = d.guideBtn;
+
+  applyGateThreshold();
+  syncBpmLabel();
+  applyLatency();
+
+  metricsPanel = createMetricsPanel(metricsPanelEl);
+  renderGuide(guideEl);
+  bindGuideClose();
+  hideCoachBanner();
+  pitchPlot.setData([pitchX, pitchMidi]);
+}
+
+localeSelectEl.addEventListener("change", (e) => {
+  applyLocale((e.target as HTMLSelectElement).value as Locale);
+});
+
 function downloadTsv(): void {
   if (sessionLog.size() === 0) {
-    statusEl.textContent = "Метрик пока нет — спойте хотя бы одну фразу";
+    statusEl.textContent = t().noMetricsYet;
     return;
   }
   const blob = new Blob([sessionLog.toTsv()], {
@@ -130,15 +200,15 @@ function downloadTsv(): void {
   // revoke late: Safari/Firefox process the download async and abort on
   // immediate revocation
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
-  statusEl.textContent = `Скачано строк метрик: ${sessionLog.size()}`;
+  statusEl.textContent = fmt(t().downloadedRows, { n: sessionLog.size() });
 }
 
 exportBtnEl.addEventListener("click", downloadTsv);
 
-const metronomeBtnEl =
-  document.querySelector<HTMLButtonElement>("#metronome-btn")!;
 const bpmSliderEl = document.querySelector<HTMLInputElement>("#bpm")!;
 const bpmValueEl = document.querySelector<HTMLSpanElement>("#bpm-value")!;
+
+const refBtnEl = vibGuideBtnEl;
 const latencySliderEl =
   document.querySelector<HTMLInputElement>("#latency")!;
 const latencyValueEl =
@@ -162,7 +232,7 @@ function storedLatencyMs(): number {
 function applyLatency(): void {
   const ms = Number.parseInt(latencySliderEl.value, 10);
   voiceLatencySec = ms / 1000;
-  latencyValueEl.textContent = `${ms} мс`;
+  latencyValueEl.textContent = `${ms} ${t().msUnit}`;
   localStorage.setItem("voxmetrics.latency", String(ms));
 }
 
@@ -182,7 +252,7 @@ function storedBpm(): number {
 }
 
 function formatBpmLabel(bpm: number): string {
-  return `${bpm} BPM · ${bpmToVibHz(bpm).toFixed(1)} Гц`;
+  return `${bpm} BPM · ${bpmToVibHz(bpm).toFixed(1)} ${t().hzUnit}`;
 }
 
 function applyBpm(restartMetronome: boolean): void {
@@ -204,7 +274,7 @@ function applyMetronomeState(): void {
 
 metronomeBtnEl.addEventListener("click", () => {
   if (!audioCtx || audioCtx.state === "closed") {
-    statusEl.textContent = "Нажмите «Начать» — метроном работает со сессией";
+    statusEl.textContent = t().startMetronomeFirst;
     return;
   }
   if (!metronome) metronome = createMetronome(audioCtx);
@@ -240,9 +310,12 @@ vibGuideBtnEl.addEventListener("click", () => {
 applyVibGuideState();
 
 renderGuide(guideEl);
-guideEl
-  .querySelector<HTMLButtonElement>(".guide-close")!
-  .addEventListener("click", hideGuide);
+function bindGuideClose(): void {
+  guideEl
+    .querySelector<HTMLButtonElement>(".guide-close")!
+    .addEventListener("click", hideGuide);
+}
+bindGuideClose();
 guideBtnEl.addEventListener("click", () => {
   guideEl.hidden ? showGuide() : hideGuide();
 });
@@ -252,12 +325,12 @@ document.addEventListener("keydown", (e) => {
 
 function showGuide(): void {
   guideEl.hidden = false;
-  guideBtnEl.textContent = "✕";
+  guideBtnEl.textContent = t().closeBtn;
 }
 
 function hideGuide(): void {
   guideEl.hidden = true;
-  guideBtnEl.textContent = "?";
+  guideBtnEl.textContent = t().guideBtn;
 }
 let coachBannerText = "";
 let coachBannerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -330,7 +403,7 @@ function storedGateDb(): number {
 function applyGateThreshold(): void {
   const db = Number.parseFloat(gateSliderEl.value);
   localStorage.setItem("voxmetrics.gate", String(db));
-  gateValueEl.textContent = `${db} дБ`;
+  gateValueEl.textContent = `${db} ${t().dbUnit}`;
   gate?.setThresholdDb(db);
 }
 
@@ -544,13 +617,19 @@ function handleWorkerOut(msg: WorkerOutMessage): void {
     return;
   }
   if (!acceptWorkerStreamMessage(msg.type, active)) return;
-  if (msg.type === "status") statusEl.textContent = msg.message;
+  if (msg.type === "status") {
+    // worker sends dict keys, not display text
+    const d = t() as unknown as Record<string, string>;
+    statusEl.textContent = msg.message in d ? d[msg.message]! : msg.message;
+  }
   if (msg.type === "f0") updatePitchChart(msg.points);
   if (msg.type === "metrics") {
     metricsPanel.update(msg.metrics);
     if (active) sessionLog.add(msg.metrics);
     const [top] = computeCoachHints(msg.metrics);
-    if (top) showCoachBanner(top.text, top.level);
+    if (top) {
+      showCoachBanner(coachText(top.key as CoachKey, getLocale()), top.level);
+    }
   }
   if (msg.type === "ltas") {
     const ltas: LtasSnapshot = { freqs: msg.freqs, db: msg.db };
@@ -643,7 +722,7 @@ async function start(): Promise<void> {
       active = true;
       startChartLoop();
       stream.getAudioTracks()[0]?.addEventListener("ended", () => stop());
-      toggleBtn.textContent = "Стоп";
+      toggleBtn.textContent = t().stopBtn;
     } catch (err) {
       releasePartialStart();
       throw err;
@@ -670,7 +749,7 @@ function stop(): void {
   stream = null;
   void audioCtx?.close();
   audioCtx = null;
-  toggleBtn.textContent = "Начать";
+  toggleBtn.textContent = t().startBtn;
   clearChart();
 }
 
@@ -683,9 +762,7 @@ toggleBtn.addEventListener("click", async () => {
     await start();
   } catch (err) {
     statusEl.textContent =
-      err instanceof Error
-        ? err.message
-        : "Не удалось получить доступ к микрофону";
+      err instanceof Error ? err.message : t().micError;
   }
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MetricsSnapshot } from "../src/types.ts";
-import { computeCoachHints } from "../src/ui/coach.ts";
+import { computeCoachHints, coachText } from "../src/ui/coach.ts";
+import { DICTS, fmt, type Locale, LOCALES } from "../src/ui/i18n.ts";
 
 function snapshot(over: Partial<MetricsSnapshot> = {}): MetricsSnapshot {
   return {
@@ -27,7 +28,7 @@ function snapshot(over: Partial<MetricsSnapshot> = {}): MetricsSnapshot {
     singer_formant_db: 8,
     jitter_pct: 0.05,
     shimmer_db: 0.02,
-    cpp_db: 12,
+    cpp_db: 5.5,
     tremolo: null,
     ...over,
   };
@@ -37,7 +38,7 @@ describe("computeCoachHints", () => {
   it("quiet/intermittent signal short-circuits everything", () => {
     const hints = computeCoachHints(snapshot({ voiced_share: 0.2 }));
     expect(hints.length).toBe(1);
-    expect(hints[0]!.text).toBe("Не слышу голос!");
+    expect(hints[0]!.key).toBe("noSignal");
   });
 
   it("slow vibrato gets the speed hint", () => {
@@ -45,15 +46,13 @@ describe("computeCoachHints", () => {
     const hints = computeCoachHints(
       snapshot({ vibrato: { ...v, rate_hz: 3.2 } }),
     );
-    expect(hints[0]!.text).toBe("Вибрато быстрее!");
+    expect(hints[0]!.key).toBe("vibFaster");
   });
 
   it("fast vibrato gets the calm-down hint", () => {
     const v = snapshot().vibrato!;
-    const hints = computeCoachHints(
-      snapshot({ vibrato: { ...v, rate_hz: 9 } }),
-    );
-    expect(hints[0]!.text).toBe("Вибрато медленнее!");
+    const hints = computeCoachHints(snapshot({ vibrato: { ...v, rate_hz: 9 } }));
+    expect(hints[0]!.key).toBe("vibSlower");
   });
 
   it("wide vibrato hint", () => {
@@ -61,7 +60,7 @@ describe("computeCoachHints", () => {
     const hints = computeCoachHints(
       snapshot({ vibrato: { ...v, extent_cents_direct: 400 } }),
     );
-    expect(hints[0]!.text).toBe("Вибрато уже!");
+    expect(hints[0]!.key).toBe("vibNarrower");
   });
 
   it("barely visible vibrato hint", () => {
@@ -69,7 +68,7 @@ describe("computeCoachHints", () => {
     const hints = computeCoachHints(
       snapshot({ vibrato: { ...v, extent_cents_direct: 15 } }),
     );
-    expect(hints[0]!.text).toBe("Вибрато шире!");
+    expect(hints[0]!.key).toBe("vibWider");
   });
 
   it("tremolo outranks vibrato problems", () => {
@@ -80,12 +79,12 @@ describe("computeCoachHints", () => {
         vibrato: { ...v, rate_hz: 3 },
       }),
     );
-    expect(hints[0]!.text).toBe("Качается громкость!");
+    expect(hints[0]!.key).toBe("tremolo");
   });
 
   it("high jitter gets support hint; tremolo suppresses shimmer duplicates", () => {
     const hints = computeCoachHints(snapshot({ jitter_pct: 0.4 }));
-    expect(hints.some((h) => h.text === "Высота дрожит!")).toBe(true);
+    expect(hints.some((h) => h.key === "pitchShaky")).toBe(true);
 
     const withTremolo = computeCoachHints(
       snapshot({
@@ -94,22 +93,22 @@ describe("computeCoachHints", () => {
         shimmer_db: 0.2,
       }),
     );
-    expect(withTremolo.some((h) => h.text === "Громкость плывёт!")).toBe(false);
+    expect(withTremolo.some((h) => h.key === "volumeWobbling")).toBe(false);
     // pitch jitter is independent of amplitude tremolo — must survive
-    expect(withTremolo.some((h) => h.text === "Высота дрожит!")).toBe(true);
+    expect(withTremolo.some((h) => h.key === "pitchShaky")).toBe(true);
   });
 
   it("no vibrato data and steady tone -> hold-the-note advice", () => {
     const hints = computeCoachHints(
       snapshot({ vibrato: null, singer_formant_db: 3, cpp_db: 3 }),
     );
-    expect(hints.some((h) => h.text === "Держите ноту!")).toBe(true);
+    expect(hints.some((h) => h.key === "holdNote")).toBe(true);
   });
 
   it("all-good yields praise first", () => {
     const hints = computeCoachHints(snapshot());
     expect(hints[0]!.level).toBe("good");
-    expect(["Отлично!", "Чистый звук!"]).toContain(hints[0]!.text);
+    expect(["excellent", "cleanSound"]).toContain(hints[0]!.key);
   });
 
   it("caps at two hints by priority", () => {
@@ -122,30 +121,50 @@ describe("computeCoachHints", () => {
     );
     expect(hints.length).toBe(2);
   });
+});
 
-  it("hint texts are short game-style banners", () => {
-    const v = snapshot().vibrato!;
-    const cases: MetricsSnapshot[] = [
-      snapshot({ voiced_share: 0.2 }),
-      snapshot({ tremolo: { rate_hz: 5, depth_db: 6 } }),
-      snapshot({ vibrato: { ...v, rate_hz: 3 } }),
-      snapshot({ vibrato: { ...v, rate_hz: 10 } }),
-      snapshot({ vibrato: { ...v, extent_cents_direct: 400 } }),
-      snapshot({ vibrato: { ...v, extent_cents_direct: 15 } }),
-      snapshot({ jitter_pct: 0.5 }),
-      snapshot({ shimmer_db: 0.3 }),
-      snapshot({ cpp_db: 2, singer_formant_db: 3 }),
-      snapshot({ singer_formant_db: 3 }),
-    ];
-    const banned = ["цент", "дБ", "Гц", "%", "jitter", "shimmer", "CPP", "—"];
+describe("coach banner texts across locales", () => {
+  const cases: { key: Parameters<typeof coachText>[0]; ru: string }[] = [
+    { key: "noSignal", ru: "Не слышу голос!" },
+    { key: "tremolo", ru: "Качается громкость!" },
+    { key: "vibFaster", ru: "Вибрато быстрее!" },
+    { key: "holdNote", ru: "Держите ноту!" },
+    { key: "excellent", ru: "Отлично!" },
+  ];
+
+  it("renders every hint in ru/en/ja without placeholders", () => {
     for (const c of cases) {
-      for (const h of computeCoachHints(c, 99)) {
-        expect(h.text.length).toBeLessThanOrEqual(22);
-        expect(h.text).toMatch(/[!…]$/);
-        for (const b of banned) {
-          expect(h.text).not.toContain(b);
-        }
+      expect(coachText(c.key, "ru")).toBe(c.ru);
+      expect(coachText(c.key, "en").length).toBeGreaterThan(2);
+      expect(coachText(c.key, "ja").length).toBeGreaterThan(2);
+    }
+  });
+});
+
+describe("i18n dictionary integrity", () => {
+  it("every locale defines every key with the same shape", () => {
+    const ruKeys = Object.keys(DICTS.ru).sort();
+    for (const locale of LOCALES) {
+      expect(Object.keys(DICTS[locale]).sort(), locale).toEqual(ruKeys);
+    }
+  });
+
+  it("no locale leaves raw RU in EN/JA values (spot check)", () => {
+    const ruLetters = /[а-яА-ЯёЁ]/;
+    for (const locale of ["en", "ja"] as Locale[]) {
+      for (const [key, value] of Object.entries(DICTS[locale])) {
+        expect(
+          ruLetters.test(value),
+          `${locale}.${key} contains Cyrillic`,
+        ).toBe(false);
       }
     }
+  });
+
+  it("fmt replaces placeholders", () => {
+    expect(fmt(DICTS.en.refRate, { lo: 4.5, hi: 7.5 })).toBe(
+      "normal 4.5–7.5 Hz",
+    );
+    expect(fmt(DICTS.ja.refRegularity, { v: 60 })).toBe("正常 ≥ 60 %");
   });
 });

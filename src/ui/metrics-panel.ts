@@ -1,5 +1,6 @@
 import type { MetricsSnapshot, VibratoResult } from "../types.ts";
 import { hzToMidi, midiToNoteLabel } from "../dsp/math.ts";
+import { fmt, t } from "./i18n.ts";
 import {
   JITTER_GOOD_PCT,
   JITTER_OK_PCT,
@@ -27,9 +28,30 @@ export const VIB_REGULARITY_GOOD = 0.6;
 export const VIB_REGULARITY_OK = 0.35;
 export const VIB_STEADY_TRUSTED_SEC = VIB_TRUSTED_SECONDS;
 
-export function fmtRangeRef(range: readonly [number, number], unit: string): string {
-  return `норма ${range[0]}–${range[1]} ${unit}`;
-}
+/** Cycle-period stability (CV) of the vibrato wave; lower = steadier tempo. */
+export const VIB_PERIODCV_GOOD = 0.1;
+export const VIB_PERIODCV_OK = 0.2;
+
+/** Singer's-formant ("ring") prominence thresholds, dB over local baseline. */
+export const SINGER_FORMANT_GOOD_DB = 6;
+export const SINGER_FORMANT_OK_DB = 3;
+export const SINGER_FORMANT_BAND: readonly [number, number] =
+  SINGER_FORMANT_CLUSTER;
+
+/** Broad formant orientation ranges (vowel- and voice-type dependent). */
+export const F1_RANGE: readonly [number, number] = [250, 1000];
+export const F2_RANGE: readonly [number, number] = [850, 2800];
+export const F3_RANGE: readonly [number, number] = [2200, 3200];
+
+/**
+ * CPP orientation, calibrated to THIS implementation's scale (verified on
+ * glottal-like pulse trains: pure noise ~0.4 dB, HNR 0-6 dB → 2-4 dB,
+ * HNR 12-24 dB → 4-7.5 dB). Higher pitch reads ~2 dB lower on the same
+ * scale (f0 220 vs 110), so GOOD=4 stays reachable for high voices.
+ * Not comparable with Praat exports.
+ */
+export const CPP_GOOD_DB = 4;
+export const CPP_OK_DB = 2.5;
 
 export function vibRateLevel(hz: number): QualityLevel {
   if (hz >= VIB_RATE_GOOD[0] && hz <= VIB_RATE_GOOD[1]) return "good";
@@ -49,10 +71,6 @@ export function vibRegularityLevel(v: number): QualityLevel {
   return "warn";
 }
 
-/** Cycle-period stability (CV) of the vibrato wave; lower = steadier tempo. */
-export const VIB_PERIODCV_GOOD = 0.1;
-export const VIB_PERIODCV_OK = 0.2;
-
 export function vibPeriodCvLevel(cv: number): QualityLevel {
   if (cv <= VIB_PERIODCV_GOOD) return "good";
   if (cv <= VIB_PERIODCV_OK) return "ok";
@@ -64,17 +82,6 @@ export function vibSteadyLevel(steadySec: number, trusted: boolean): QualityLeve
   if (steadySec >= 1) return "ok";
   return "warn";
 }
-
-/** Singer's-formant ("ring") prominence thresholds, dB over local baseline. */
-export const SINGER_FORMANT_GOOD_DB = 6;
-export const SINGER_FORMANT_OK_DB = 3;
-export const SINGER_FORMANT_BAND: readonly [number, number] =
-  SINGER_FORMANT_CLUSTER;
-
-/** Broad formant orientation ranges (vowel- and voice-type dependent). */
-export const F1_RANGE: readonly [number, number] = [250, 1000];
-export const F2_RANGE: readonly [number, number] = [850, 2800];
-export const F3_RANGE: readonly [number, number] = [2200, 3200];
 
 export function singerFormantLevel(prominenceDb: number): QualityLevel {
   if (prominenceDb >= SINGER_FORMANT_GOOD_DB) return "good";
@@ -90,16 +97,6 @@ export function formantLevel(
   if (hz >= range[0] && hz <= range[1]) return "good";
   return "";
 }
-
-/**
- * CPP orientation, calibrated to THIS implementation's scale (verified on
- * glottal-like pulse trains: pure noise ~0.4 dB, HNR 0-6 dB → 2-4 dB,
- * HNR 12-24 dB → 4-7.5 dB). Higher pitch reads ~2 dB lower on the same
- * scale (f0 220 vs 110), so GOOD=4 stays reachable for high voices.
- * Not comparable with Praat exports.
- */
-export const CPP_GOOD_DB = 4;
-export const CPP_OK_DB = 2.5;
 
 export function jitterLevel(pct: number): QualityLevel {
   if (pct <= JITTER_GOOD_PCT) return "good";
@@ -127,7 +124,7 @@ export function medianNoteLabel(hz: number | null): string {
 
 export function fmtDb(v: number | null): string {
   if (v == null) return "—";
-  return `${v >= 0 ? "+" : ""}${v.toFixed(1)} дБ`;
+  return `${v >= 0 ? "+" : ""}${v.toFixed(1)} ${t().dbUnit}`;
 }
 
 export interface MetricsPanelHandle {
@@ -189,7 +186,7 @@ function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): boolean {
     ctx.moveTo(x, 0);
     ctx.lineTo(x, cssH - 9);
     ctx.stroke();
-    const label = f >= 1000 ? `${f / 1000}к` : `${f}`;
+    const label = f >= 1000 ? `${f / 1000}k` : `${f}`;
     ctx.fillText(label, x + 2, cssH - 1);
   }
 
@@ -209,158 +206,159 @@ function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): boolean {
 }
 
 export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
+  const d = t();
   root.innerHTML = `
     <div class="mlegend">
-      <span class="mchip q-good">норма</span>
-      <span class="mchip q-ok">допустимо</span>
-      <span class="mchip q-warn">вне нормы</span>
+      <span class="mchip q-good">${d.legendGood}</span>
+      <span class="mchip q-ok">${d.legendOk}</span>
+      <span class="mchip q-warn">${d.legendWarn}</span>
     </div>
     <section class="mcard">
-      <h2>Вибрато</h2>
+      <h2>${d.cardVibrato}</h2>
       <div class="mrow">
-        <span class="mlabel">Частота</span>
+        <span class="mlabel">${d.mRate}</span>
         <span class="mstack">
           <span class="mval" id="mv-vib-rate">—</span>
-          <span class="mref">${fmtRangeRef(VIB_RATE_GOOD, "Гц")}</span>
+          <span class="mref">${fmt(d.refRate, { lo: VIB_RATE_GOOD[0], hi: VIB_RATE_GOOD[1] })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Размах</span>
+        <span class="mlabel">${d.mExtent}</span>
         <span class="mstack">
           <span class="mval" id="mv-vib-extent">—</span>
-          <span class="mref">${fmtRangeRef(VIB_EXTENT_GOOD, "центов")}</span>
+          <span class="mref">${fmt(d.refExtent, { lo: VIB_EXTENT_GOOD[0], hi: VIB_EXTENT_GOOD[1] })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Регулярность</span>
+        <span class="mlabel">${d.mRegularity}</span>
         <span class="mstack">
           <span class="mval" id="mv-vib-reg">—</span>
-          <span class="mref">норма ≥ ${VIB_REGULARITY_GOOD * 100} %</span>
+          <span class="mref">${fmt(d.refRegularity, { v: VIB_REGULARITY_GOOD * 100 })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Стаб. темпа</span>
+        <span class="mlabel">${d.mTempoStability}</span>
         <span class="mstack">
           <span class="mval" id="mv-vib-pcv">—</span>
-          <span class="mref">норма ≤ ${Math.round(VIB_PERIODCV_GOOD * 100)} %</span>
+          <span class="mref">${fmt(d.refTempoCv, { v: Math.round(VIB_PERIODCV_GOOD * 100) })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Ровный тон</span>
+        <span class="mlabel">${d.mSteady}</span>
         <span class="mstack">
           <span class="mval" id="mv-vib-steady">—</span>
-          <span class="mref">надёжно ≥ ${VIB_STEADY_TRUSTED_SEC} с</span>
+          <span class="mref">${fmt(d.refSteady, { v: VIB_STEADY_TRUSTED_SEC })}</span>
         </span>
       </div>
-      <p class="mhint" id="mv-vib-hint">Пойте одну ноту ≥ ${VIB_STEADY_TRUSTED_SEC} с без перерыва</p>
+      <p class="mhint" id="mv-vib-hint">${fmt(d.vibHint, { v: VIB_STEADY_TRUSTED_SEC })}</p>
     </section>
-    <section class="mcard" title="Эталонных значений нет: зависит от голосового типа и гласного">
-      <h2>Тон</h2>
+    <section class="mcard">
+      <h2>${d.cardTone}</h2>
       <div class="mrow">
-        <span class="mlabel">Медиана F0</span>
+        <span class="mlabel">${d.mF0Median}</span>
         <span class="mstack">
           <span class="mval" id="mv-tone-median">—</span>
-          <span class="mref">индивидуальна</span>
+          <span class="mref">${d.refIndividual}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Озвученность</span>
+        <span class="mlabel">${d.mVoicedShare}</span>
         <span class="mstack">
           <span class="mval" id="mv-tone-voiced">—</span>
-          <span class="mref">информативная</span>
+          <span class="mref">${d.refInformative}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Окно анализа</span>
+        <span class="mlabel">${d.mWindow}</span>
         <span class="mstack">
           <span class="mval" id="mv-tone-window">—</span>
-          <span class="mref">скользящее</span>
+          <span class="mref">${d.refScrolling}</span>
         </span>
       </div>
     </section>
-    <section class="mcard" title="Форманты зависят от гласного и типа голоса — диапазоны ориентировочные">
-      <h2>Резонанс</h2>
+    <section class="mcard">
+      <h2>${d.cardResonance}</h2>
       <div class="mrow">
-        <span class="mlabel">F1</span>
+        <span class="mlabel">${d.mF1}</span>
         <span class="mstack">
           <span class="mval" id="mv-f1">—</span>
-          <span class="mref">~${F1_RANGE[0]}–${F1_RANGE[1]} Гц</span>
+          <span class="mref">${fmt(d.refF1, { lo: F1_RANGE[0], hi: F1_RANGE[1] })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">F2</span>
+        <span class="mlabel">${d.mF2}</span>
         <span class="mstack">
           <span class="mval" id="mv-f2">—</span>
-          <span class="mref">~${F2_RANGE[0]}–${F2_RANGE[1]} Гц</span>
+          <span class="mref">${fmt(d.refF1, { lo: F2_RANGE[0], hi: F2_RANGE[1] })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">F3</span>
+        <span class="mlabel">${d.mF3}</span>
         <span class="mstack">
           <span class="mval" id="mv-f3">—</span>
-          <span class="mref">~${F3_RANGE[0]}–${F3_RANGE[1]} Гц</span>
+          <span class="mref">${fmt(d.refF1, { lo: F3_RANGE[0], hi: F3_RANGE[1] })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Певч. форманта</span>
+        <span class="mlabel">${d.mSinger}</span>
         <span class="mstack">
           <span class="mval" id="mv-singer">—</span>
-          <span class="mref">пик ${SINGER_FORMANT_BAND[0] / 1000}–${SINGER_FORMANT_BAND[1] / 1000} кГц · норма ≥ ${SINGER_FORMANT_GOOD_DB} дБ</span>
+          <span class="mref">${fmt(d.refSinger, { lo: SINGER_FORMANT_BAND[0] / 1000, hi: SINGER_FORMANT_BAND[1] / 1000, v: SINGER_FORMANT_GOOD_DB })}</span>
         </span>
       </div>
     </section>
-    <section class="mcard" title="Стабильность на ровном тоне; абсолютные значения зависят от микрофона — сравнивайте тренд">
-      <h2>Стабильность</h2>
+    <section class="mcard">
+      <h2>${d.cardStability}</h2>
       <div class="mrow">
-        <span class="mlabel">Jitter</span>
+        <span class="mlabel">${d.mJitter}</span>
         <span class="mstack">
           <span class="mval" id="mv-jitter">—</span>
-          <span class="mref">норма ≤ ${JITTER_GOOD_PCT} %</span>
+          <span class="mref">${fmt(d.refJitter, { v: JITTER_GOOD_PCT })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Shimmer</span>
+        <span class="mlabel">${d.mShimmer}</span>
         <span class="mstack">
           <span class="mval" id="mv-shimmer">—</span>
-          <span class="mref">норма ≤ ${SHIMMER_GOOD_DB} дБ</span>
+          <span class="mref">${fmt(d.refShimmer, { v: SHIMMER_GOOD_DB })}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">CPP</span>
+        <span class="mlabel">${d.mCpp}</span>
         <span class="mstack">
           <span class="mval" id="mv-cpp">—</span>
-          <span class="mref">ориентир ≥ ${CPP_GOOD_DB} дБ</span>
+          <span class="mref">${fmt(d.refCpp, { v: CPP_GOOD_DB })}</span>
         </span>
       </div>
     </section>
-    <section class="mcard" title="Эталонных значений нет: сравнивайте свой тренд между подходами">
-      <h2>Спектр</h2>
+    <section class="mcard">
+      <h2>${d.cardSpectrum}</h2>
       <div class="mrow">
-        <span class="mlabel">H1−H2</span>
+        <span class="mlabel">${d.mH1H2}</span>
         <span class="mstack">
           <span class="mval" id="mv-spec-h1h2">—</span>
-          <span class="mref">тренд</span>
+          <span class="mref">${d.refTrend}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">Центроид</span>
+        <span class="mlabel">${d.mCentroid}</span>
         <span class="mstack">
           <span class="mval" id="mv-spec-centroid">—</span>
-          <span class="mref">тренд</span>
+          <span class="mref">${d.refTrend}</span>
         </span>
       </div>
       <div class="mrow">
-        <span class="mlabel">S/F баланс</span>
+        <span class="mlabel">${d.mSf}</span>
         <span class="mstack">
           <span class="mval" id="mv-spec-sf">—</span>
-          <span class="mref">тренд</span>
+          <span class="mref">${d.refTrend}</span>
         </span>
       </div>
     </section>
-    <section class="mcard" title="Усреднённый спектр окна анализа: где сосредоточена энергия голоса">
-      <h2>LTAS · спектр</h2>
+    <section class="mcard">
+      <h2>${d.cardLtas}</h2>
       <canvas class="mltas" id="mv-ltas"></canvas>
-      <p class="mhint" id="mv-ltas-hint">Появится после ~2 с звука выше порога гейта</p>
+      <p class="mhint" id="mv-ltas-hint">${d.ltasHint}</p>
     </section>
   `;
 
@@ -396,7 +394,7 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
       vibHint.classList.remove("hidden");
       return;
     }
-    vibRate.textContent = `${v.rate_hz.toFixed(2)} Гц`;
+    vibRate.textContent = `${v.rate_hz.toFixed(2)} ${t().hzUnit}`;
     setQuality(vibRate, vibRateLevel(v.rate_hz));
     vibExtent.textContent = `${Math.round(v.extent_cents_direct)} ¢`;
     setQuality(vibExtent, vibExtentLevel(v.extent_cents_direct));
@@ -414,8 +412,8 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
       vibPcv.textContent = `${Math.round(v.period_cv * 100)} %`;
       setQuality(vibPcv, vibPeriodCvLevel(v.period_cv));
     }
-    vibSteady.textContent = `${v.steady_seconds.toFixed(1)} с${
-      v.trusted ? " · надёжно" : ""
+    vibSteady.textContent = `${v.steady_seconds.toFixed(1)} ${t().secUnit}${
+      v.trusted ? ` · ${t().trusted}` : ""
     }`;
     setQuality(vibSteady, vibSteadyLevel(v.steady_seconds, v.trusted));
     vibHint.classList.toggle("hidden", v.trusted);
@@ -425,14 +423,14 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
     update(metrics: MetricsSnapshot): void {
       renderVibrato(metrics.vibrato);
       toneMedian.textContent = metrics.f0_median_hz
-        ? `${metrics.f0_median_hz.toFixed(1)} Гц · ${medianNoteLabel(metrics.f0_median_hz)}`
+        ? `${metrics.f0_median_hz.toFixed(1)} ${t().hzUnit} · ${medianNoteLabel(metrics.f0_median_hz)}`
         : "—";
       toneVoiced.textContent = `${Math.round(metrics.voiced_share * 100)} %`;
-      toneWindow.textContent = `${metrics.duration_s.toFixed(1)} с`;
+      toneWindow.textContent = `${metrics.duration_s.toFixed(1)} ${t().secUnit}`;
       specH1h2.textContent = fmtDb(metrics.h1_h2_db);
       specCentroid.textContent =
         metrics.spectral_centroid_hz > 0
-          ? `${Math.round(metrics.spectral_centroid_hz)} Гц`
+          ? `${Math.round(metrics.spectral_centroid_hz)} ${t().hzUnit}`
           : "—";
       specSf.textContent = fmtDb(metrics.sf_balance_db);
 
@@ -441,14 +439,14 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
       const fRanges = [F1_RANGE, F2_RANGE, F3_RANGE];
       for (let i = 0; i < 3; i++) {
         const hz = fHz[i];
-        fEls[i]!.textContent = hz != null ? `${Math.round(hz)} Гц` : "—";
+        fEls[i]!.textContent = hz != null ? `${Math.round(hz)} ${t().hzUnit}` : "—";
         setQuality(fEls[i]!, formantLevel(hz, fRanges[i]!));
       }
 
       if (metrics.singer_formant_hz != null && metrics.singer_formant_db != null) {
         singer.textContent =
-          `${(metrics.singer_formant_hz / 1000).toFixed(2)} кГц · ` +
-          `${metrics.singer_formant_db >= 0 ? "+" : ""}${metrics.singer_formant_db.toFixed(1)} дБ`;
+          `${(metrics.singer_formant_hz / 1000).toFixed(2)} kHz · ` +
+          `${metrics.singer_formant_db >= 0 ? "+" : ""}${metrics.singer_formant_db.toFixed(1)} ${t().dbUnit}`;
         setQuality(singer, singerFormantLevel(metrics.singer_formant_db));
       } else {
         singer.textContent = "—";
@@ -463,14 +461,14 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
         setQuality(jitter, "");
       }
       if (metrics.shimmer_db != null) {
-        shimmer.textContent = `${metrics.shimmer_db.toFixed(2)} дБ`;
+        shimmer.textContent = `${metrics.shimmer_db.toFixed(2)} ${t().dbUnit}`;
         setQuality(shimmer, shimmerLevel(metrics.shimmer_db));
       } else {
         shimmer.textContent = "—";
         setQuality(shimmer, "");
       }
       if (metrics.cpp_db != null) {
-        cpp.textContent = `${metrics.cpp_db.toFixed(1)} дБ`;
+        cpp.textContent = `${metrics.cpp_db.toFixed(1)} ${t().dbUnit}`;
         setQuality(cpp, cppLevel(metrics.cpp_db));
       } else {
         cpp.textContent = "—";

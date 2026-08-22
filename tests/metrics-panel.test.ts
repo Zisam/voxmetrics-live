@@ -7,7 +7,6 @@ import {
   F3_RANGE,
   cppLevel,
   fmtDb,
-  fmtRangeRef,
   formantLevel,
   jitterLevel,
   medianNoteLabel,
@@ -117,13 +116,6 @@ describe("reference ranges match quality levels (UI can't contradict colors)", (
     expect(vibSteadyLevel(VIB_STEADY_TRUSTED_SEC, false)).toBe("good");
     expect(vibSteadyLevel(VIB_STEADY_TRUSTED_SEC - 0.1, false)).not.toBe("good");
     expect(vibSteadyLevel(2, true)).toBe("good");
-  });
-
-  it("fmtRangeRef renders the same numbers as the boundaries", () => {
-    expect(fmtRangeRef(VIB_RATE_GOOD, "Гц")).toBe("норма 4.5–7.5 Гц");
-    expect(fmtRangeRef(VIB_EXTENT_GOOD, "центов")).toBe(
-      "норма 40–250 центов",
-    );
   });
 });
 

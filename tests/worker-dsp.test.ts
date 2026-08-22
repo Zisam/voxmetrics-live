@@ -59,12 +59,12 @@ describe("handleWorkerMessage", () => {
   it("handles start and stop lifecycle", () => {
     const state = createWorkerState();
     const start = handleWorkerMessage(state, { type: "start", sampleRate: RATE });
-    expect(start).toEqual([{ type: "status", message: "Слушаю микрофон…" }]);
+    expect(start).toEqual([{ type: "status", message: "statusListening" }]);
     expect(state.running).toBe(true);
     expect(state.tracker).not.toBeNull();
 
     const stop = handleWorkerMessage(state, { type: "stop" });
-    expect(stop).toEqual([{ type: "status", message: "Остановлено" }]);
+    expect(stop).toEqual([{ type: "status", message: "statusStopped" }]);
     expect(state.running).toBe(false);
     expect(state.tracker).toBeNull();
     expect(state.hudBaselineHz).toBe(0);
@@ -186,11 +186,11 @@ describe("dsp.ts worker wrapper", () => {
     expect(onmessage).not.toBeNull();
 
     onmessage!({ data: { type: "start", sampleRate: RATE } } as MessageEvent);
-    expect(posted).toEqual([{ type: "status", message: "Слушаю микрофон…" }]);
+    expect(posted).toEqual([{ type: "status", message: "statusListening" }]);
 
     posted.length = 0;
     onmessage!({ data: { type: "stop" } } as MessageEvent);
-    expect(posted).toEqual([{ type: "status", message: "Остановлено" }]);
+    expect(posted).toEqual([{ type: "status", message: "statusStopped" }]);
 
     vi.unstubAllGlobals();
   });

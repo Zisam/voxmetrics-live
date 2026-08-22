@@ -1,5 +1,10 @@
 /** Guide content: structured so tests can verify completeness. */
 
+import { getLocale, t, type Locale } from "./i18n.ts";
+import { coachText } from "./coach.ts";
+import { GUIDE_SECTIONS_EN } from "./guide-content-en.ts";
+import { GUIDE_SECTIONS_JA } from "./guide-content-ja.ts";
+
 export type GuideMetricId =
   | "vibrato"
   | "jitter"
@@ -39,29 +44,44 @@ export interface GuideExercise {
   steps: string[];
 }
 
-export const VIBRATO_TARGET =
-  "Ориентир по референсам: волна около 5.5 Гц с размахом 150 центов и стабильностью темпа ≤ 10 %. Тренируется как барабанная дробь: клик метронома — на каждый 4-й качок волны (5.5 Гц = 82.5, на практике 83 BPM). Ползунок «Темп» задаёт и клик, и синусоиду-эталон.";
+const VIBRATO_TARGETS: Record<Locale, string> = {
+  ru: "Ориентир по референсам: волна около 5.5 Гц с размахом 150 центов и стабильностью темпа ≤ 10 %. Тренируется как барабанная дробь: клик метронома — на каждый 4-й качок волны (5.5 Гц = 82.5, на практике 83 BPM). Ползунок «Темп» задаёт и клик, и синусоиду-эталон.",
+  en: "Reference target: a wave near 5.5 Hz with a 150-cent extent and tempo stability ≤ 10 %. Trained like a drum roll: the metronome click lands on every 4th wave cycle (5.5 Hz = 82.5, in practice 83 BPM). The “Tempo” slider drives both the click and the reference sine.",
+  ja: "参照目標：約5.5 Hz、振幅150セント、テンポ安定 ≤ 10 %の波。ドラムロールのように鍛えます：クリックは波の4サイクル目ごと（5.5 Hz = 82.5、実際は83 BPM）。「テンポ」スライダーがクリックも参照サイン波も動かします。",
+};
+
+export function vibratoTarget(): string {
+  return VIBRATO_TARGETS[getLocale()];
+}
 
 export interface GuideSection {
   id: GuideMetricId;
   title: string;
-  /** Banner text or metric this section explains. */
+  /** Coach hint keys this section explains (locale-independent). */
   triggers: string[];
   intro: string;
   exercises: GuideExercise[];
-  /** Optional reference table (vibrato performers). */
-  references?: VibratoReference[];
-  target?: string;
+  /** "shared" = use the shared VIBRATO_REFERENCES table. */
+  references?: "shared";
+  target?: "shared";
 }
 
-export const GUIDE_DISCLAIMER =
-  "Честно: гарантировать результат в постановке голоса нельзя — но короткие регулярные занятия надёжнее редких подвигов. 10–15 минут в день, и метрики сами покажут прогресс. При боли или дискомфорте в горле — остановитесь и обратитесь к педагогу или фониатру.";
+const GUIDE_DISCLAIMERS: Record<Locale, string> = {
+  ru: "Честно: гарантировать результат в постановке голоса нельзя — но короткие регулярные занятия надёжнее редких подвигов. 10–15 минут в день, и метрики сами покажут прогресс. При боли или дискомфорте в горле — остановитесь и обратитесь к педагогу или фониатру.",
+  en: "Honest note: no one can guarantee results in vocal training — but short regular sessions beat rare heroic ones. 10–15 minutes a day, and the metrics will show the progress themselves. If your throat hurts or feels strained — stop and see a teacher or a phoniatrician.",
+  ja: "正直に：声のトレーニングの結果は誰も保証できません——しかし短くても毎日の練習は、まれな特訓より確実です。1日10〜15分、メトリクスが進歩を示します。喉に痛みや違和感があれば中断し、教師または音声医師に相談してください。",
+};
 
+export function guideDisclaimer(): string {
+  return GUIDE_DISCLAIMERS[getLocale()];
+}
+
+/** RU sections are defined below; EN/JA live in their content modules. */
 export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "start",
     title: "С чего начать",
-    triggers: ["первый запуск", "Не слышу голос!"],
+    triggers: ["first-run", "noSignal"],
     intro:
       "Наденьте наушники, разрешите микрофон, выберите канал и пойте одну ноту 5 секунд, глядя на кривую. Если появилась подсказка «Не слышу голос!» — пойте громче или опустите порог гейта в тулбаре. Подсказки в центре экрана подскажут, что тренировать прямо сейчас. Разогревайтесь перед занятием: мычание и сирены 2–3 минуты.",
     exercises: [
@@ -78,11 +98,11 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "vibrato",
     title: "Вибрато",
-    triggers: ["Вибрато быстрее!", "Вибрато медленнее!", "Вибрато уже!", "Вибрато шире!", "Волна ровнее!"],
+    triggers: ["vibFaster", "vibSlower", "vibNarrower", "vibWider", "vibSmoother"],
     intro:
       "Вибрато — не «таинственный дар», а ритмический навык, как быстрые удары у барабанщика: сначала медленно и под контролем, затем разгон под метроном до автопилота. Так развивают его и профессионалы (Ruki из the GazettE, кстати, начинал как барабанщик). Цель: частота ~5.5 Гц, размах 130–190 центов, стабильность темпа ≤ 10 % — карточка «Вибрато» показывает все три.",
-    references: VIBRATO_REFERENCES,
-    target: VIBRATO_TARGET,
+    references: "shared",
+    target: "shared",
     exercises: [
       {
         name: "Разминка (2–3 минуты)",
@@ -166,7 +186,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "jitter",
     title: "Дрожание высоты",
-    triggers: ["Высота дрожит!"],
+    triggers: ["pitchShaky"],
     intro:
       "Мелкая дрожь высоты обычно означает напряжение или слабую опору дыхания. Тренируйте спокойный выдох и расслабление гортани.",
     exercises: [
@@ -191,7 +211,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "tremolo",
     title: "Качание громкости (тремоло)",
-    triggers: ["Качается громкость!", "Громкость плывёт!"],
+    triggers: ["tremolo", "volumeWobbling"],
     intro:
       "Если вместо высоты качается громкость — воздух подаётся неровно или звук «прыгает» на связках. Цель — ровное давление воздуха.",
     exercises: [
@@ -215,7 +235,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "singer",
     title: "Полётность и резонанс",
-    triggers: ["Больше полётности!"],
+    triggers: ["moreRing"],
     intro:
       "«Полётность» — усиление верхней зоны спектра, голос звучит звонче и пробивает пространство. Ощущение звука «в маске»: вибрация в области носа и губ.",
     exercises: [
@@ -239,7 +259,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "cpp",
     title: "Чистота звука",
-    triggers: ["Плотнее звук!"],
+    triggers: ["denserSound"],
     intro:
       "Придыхательность — воздух прорывается до звука. Начинайте звук чисто: вдох — мгновение тишины — сразу тон.",
     exercises: [
@@ -256,7 +276,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "steady",
     title: "Ровный длинный тон",
-    triggers: ["Держите ноту!"],
+    triggers: ["holdNote"],
     intro:
       "Основа всего: нота без перерыва и без изменения краски. Это и есть тест на опору.",
     exercises: [
@@ -272,7 +292,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   {
     id: "pitch",
     title: "Интонация",
-    triggers: ["мимо ноты"],
+    triggers: ["off-note"],
     intro:
       "Кривая на графике — ваш тюнер: держите её строго на линии нужной ноты. Вниз петь интонационно труднее, чем вверх.",
     exercises: [
@@ -294,39 +314,60 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
 ];
 
+/** Sections for the current locale. */
+export function guideSections(): GuideSection[] {
+  const locale = getLocale();
+  if (locale === "en") return GUIDE_SECTIONS_EN;
+  if (locale === "ja") return GUIDE_SECTIONS_JA;
+  return GUIDE_SECTIONS;
+}
+
+const REF_TABLE_HEADERS: Record<Locale, string[]> = {
+  ru: ["Исполнитель", "Частота", "Размах"],
+  en: ["Performer", "Rate", "Extent"],
+  ja: ["歌手", "周波数", "振幅"],
+};
+
+const CENTS_LABEL: Record<Locale, string> = {
+  ru: "центов",
+  en: "cents",
+  ja: "セント",
+};
+
 export function renderGuide(root: HTMLElement): void {
-  const sections = GUIDE_SECTIONS.map(
+  const locale = getLocale();
+  const d = t();
+  const sections = guideSections().map(
     (s) => `
       <section class="gsection">
         <h2>${s.title}</h2>
         ${
           s.triggers.length
             ? `<p class="gtriggers">${s.triggers
-                .map((t) => `<span class="gchip">${t}</span>`)
+                .map((k) => `<span class="gchip">${triggerLabel(k)}</span>`)
                 .join("")}</p>`
             : ""
         }
         <p class="gintro">${s.intro}</p>
         ${
-          s.references?.length
+          s.references === "shared"
             ? `
         <div class="grefs">
           <table class="greftable">
             <thead>
-              <tr><th>Исполнитель</th><th>Частота</th><th>Размах</th></tr>
+              <tr>${REF_TABLE_HEADERS[locale]!.map((h) => `<th>${h}</th>`).join("")}</tr>
             </thead>
             <tbody>
-              ${s.references
-                .flatMap((r) =>
+              ${VIBRATO_REFERENCES.flatMap((r) =>
                   r.measurements.map((m) => {
                     const src = r.source ? ` <span class="grefsrc">(${r.source})</span>` : "";
-                    return `<tr><td>${r.artist}${src}</td><td>${m.hz} Гц</td><td>${m.cents} центов</td></tr>`;
+                    return `<tr><td>${r.artist}${src}</td><td>${m.hz} Hz</td><td>${m.cents} ${CENTS_LABEL[locale]}</td></tr>`;
                   }),
                 )
                 .join("")}
             </tbody>
           </table>
-          ${s.target ? `<p class="gtarget">${s.target}</p>` : ""}
+          ${s.target === "shared" ? `<p class="gtarget">${vibratoTarget()}</p>` : ""}
         </div>`
             : ""
         }
@@ -345,10 +386,39 @@ export function renderGuide(root: HTMLElement): void {
   root.innerHTML = `
     <div class="guide-inner">
       <header class="guide-head">
-        <h1>Как тренироваться</h1>
-        <button type="button" class="guide-close" title="Закрыть">✕</button>
+        <h1>${d.howToTrain}</h1>
+        <button type="button" class="guide-close" title="${d.closeBtn}">${d.closeBtn}</button>
       </header>
-      <p class="gdisclaimer">${GUIDE_DISCLAIMER}</p>
+      <p class="gdisclaimer">${guideDisclaimer()}</p>
       ${sections}
     </div>`;
+}
+
+/** Coach keys that identify a section trigger (non-hints render raw). */
+const TRIGGER_KEYS = new Set<string>([
+  "noSignal",
+  "tremolo",
+  "vibFaster",
+  "vibSlower",
+  "vibNarrower",
+  "vibWider",
+  "vibSmoother",
+  "holdNote",
+  "pitchShaky",
+  "volumeWobbling",
+  "moreRing",
+  "denserSound",
+  "excellent",
+  "cleanSound",
+]);
+
+function triggerLabel(key: string): string {
+  if (TRIGGER_KEYS.has(key)) {
+    return coachText(key as Parameters<typeof coachText>[0], localeOfGuide());
+  }
+  return key;
+}
+
+function localeOfGuide(): Locale {
+  return getLocale();
 }

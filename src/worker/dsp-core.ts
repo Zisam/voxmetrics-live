@@ -42,13 +42,13 @@ export function handleWorkerMessage(
     state.rate = msg.sampleRate;
     state.tracker = new F0Tracker(state.rate, TRACKER_BUFFER_SEC);
     state.running = true;
-    out.push({ type: "status", message: "Слушаю микрофон…" });
+    out.push({ type: "status", message: "statusListening" });
     return out;
   }
 
   if (msg.type === "stop") {
     resetWorkerSession(state);
-    out.push({ type: "status", message: "Остановлено" });
+    out.push({ type: "status", message: "statusStopped" });
     return out;
   }
 
