@@ -84,9 +84,8 @@ export function drawClickMarks(
   const windowSec = u.scales.x.max ?? 0;
   if (windowSec <= 0 || beatIntervalSec <= 0) return;
   const { ctx } = u;
+  const top = u.bbox.top;
   const bottom = u.bbox.top + u.bbox.height;
-  const markTop = bottom - 14 * uPlot.pxRatio;
-  const strongTop = bottom - 30 * uPlot.pxRatio;
 
   ctx.save();
   ctx.lineWidth = 1.5 * uPlot.pxRatio;
@@ -103,10 +102,10 @@ export function drawClickMarks(
     const px = u.valToPos(x, "x", true);
     const strong = ((k % 4) + 4) % 4 === 0;
     ctx.strokeStyle = strong
-      ? "rgba(110, 231, 183, 0.75)"
-      : "rgba(110, 231, 183, 0.28)";
+      ? "rgba(110, 231, 183, 0.55)"
+      : "rgba(110, 231, 183, 0.16)";
     ctx.beginPath();
-    ctx.moveTo(px, strong ? strongTop : markTop);
+    ctx.moveTo(px, top);
     ctx.lineTo(px, bottom);
     ctx.stroke();
   }
