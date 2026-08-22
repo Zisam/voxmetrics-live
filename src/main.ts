@@ -26,6 +26,7 @@ import { renderGuide } from "./ui/guide.ts";
 import {
   bpmToVibHz,
   computeVibratoGuide,
+  drawClickMarks,
   drawVibratoGuide,
   VIB_REF_HZ,
   vibHzToBpm,
@@ -359,14 +360,18 @@ function chartSize(): { width: number; height: number } {
 }
 
 function drawNoteGrid(u: uPlot): void {
+  const metAnchor = metronome?.isOn() ? metronome.anchorWallSec() : null;
+  const metInterval = metronome?.isOn() ? metronome.beatIntervalSec() : null;
+  if (metAnchor != null && metInterval != null) {
+    drawClickMarks(u, metAnchor, metInterval, performance.now() / 1000);
+  }
   if (vibGuideOn) {
     const center = visibleVoicedMedian(pitchMidi);
-    const anchor = metronome?.isOn() ? metronome.anchorWallSec() : null;
     drawVibratoGuide(
       u,
       center == null ? null : computeVibratoGuide(center, refVibHz),
-      anchor != null
-        ? { anchorWallSec: anchor, nowWallSec: performance.now() / 1000 }
+      metAnchor != null
+        ? { anchorWallSec: metAnchor, nowWallSec: performance.now() / 1000 }
         : null,
     );
   }

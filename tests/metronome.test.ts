@@ -120,6 +120,7 @@ describe("createMetronome", () => {
     const { ctx } = makeCtx();
     const met = createMetronome(ctx as never);
     expect(met.anchorWallSec()).toBeNull();
+    expect(met.beatIntervalSec()).toBeNull();
 
     const before = performance.now() / 1000;
     met.start(83);
@@ -128,9 +129,12 @@ describe("createMetronome", () => {
     expect(anchor).not.toBeNull();
     expect(anchor!).toBeGreaterThanOrEqual(before);
     expect(anchor!).toBeLessThanOrEqual(after);
+    // 83 BPM → ~0.7229 s per beat
+    expect(met.beatIntervalSec()).toBeCloseTo(60 / 83, 6);
 
     met.stop();
     expect(met.anchorWallSec()).toBeNull();
+    expect(met.beatIntervalSec()).toBeNull();
   });
 });
 

@@ -71,6 +71,49 @@ export interface SinePhaseLock {
 }
 
 /**
+ * Draw vertical click marks along the chart bottom edge: one per metronome
+ * beat, accented every 4th (the count anchor). Grid derived from the same
+ * anchor/interval as the audio clicks and the phase-locked sine.
+ */
+export function drawClickMarks(
+  u: uPlot,
+  anchorWallSec: number,
+  beatIntervalSec: number,
+  nowWallSec: number,
+): void {
+  const windowSec = u.scales.x.max ?? 0;
+  if (windowSec <= 0 || beatIntervalSec <= 0) return;
+  const { ctx } = u;
+  const bottom = u.bbox.top + u.bbox.height;
+  const markTop = bottom - 14 * uPlot.pxRatio;
+  const strongTop = bottom - 30 * uPlot.pxRatio;
+
+  ctx.save();
+  ctx.lineWidth = 1.5 * uPlot.pxRatio;
+  // chart x -> wall time: x = windowSec is "now"
+  const wallAt = (x: number) => nowWallSec - (windowSec - x);
+
+  // beats from the first accent at/behind the window start through now
+  const firstBeat = Math.floor((wallAt(0) - anchorWallSec) / beatIntervalSec) - 1;
+  for (let k = firstBeat; ; k++) {
+    const wallT = anchorWallSec + k * beatIntervalSec;
+    const x = windowSec - (nowWallSec - wallT);
+    if (x > windowSec) break;
+    if (x < 0) continue;
+    const px = u.valToPos(x, "x", true);
+    const strong = ((k % 4) + 4) % 4 === 0;
+    ctx.strokeStyle = strong
+      ? "rgba(110, 231, 183, 0.75)"
+      : "rgba(110, 231, 183, 0.28)";
+    ctx.beginPath();
+    ctx.moveTo(px, strong ? strongTop : markTop);
+    ctx.lineTo(px, bottom);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
  * Draw the vibrato reference overlay under the pitch curve: a 150-cent
  * corridor around the held note (dashed bounds, faint fill) and a 150-cent
  * peak-to-peak sine exactly filling the corridor. With a phase lock the

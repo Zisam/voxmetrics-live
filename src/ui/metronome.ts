@@ -15,6 +15,8 @@ export interface Metronome {
    * to this moment so the wave visibly rides the click. Null when stopped.
    */
   anchorWallSec(): number | null;
+  /** Accent interval in seconds; null when stopped. */
+  beatIntervalSec(): number | null;
 }
 
 const ACCENT_HZ = 1568;
@@ -69,6 +71,9 @@ export function createMetronome(ctx: AudioContext): Metronome {
     },
     anchorWallSec(): number | null {
       return anchor;
+    },
+    beatIntervalSec(): number | null {
+      return bpm > 0 ? 60 / bpm : null;
     },
   };
 }
