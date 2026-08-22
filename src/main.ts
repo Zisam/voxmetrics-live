@@ -24,11 +24,15 @@ import { createMetricsPanel, type LtasSnapshot } from "./ui/metrics-panel.ts";
 import { computeCoachHints } from "./ui/coach.ts";
 import { renderGuide } from "./ui/guide.ts";
 import {
+  bpmToVibHz,
   computeVibratoGuide,
   drawVibratoGuide,
+  VIB_REF_HZ,
+  vibHzToBpm,
   visibleVoicedMedian,
 } from "./ui/vibrato-guide.ts";
 import { SessionLog, tsvFilename } from "./ui/session-log.ts";
+import { createMetronome, type Metronome } from "./ui/metronome.ts";
 import {
   createFrameScheduler,
   resetYRangeCache,
@@ -50,7 +54,13 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <span class="gate-value" id="gate-value">-50 дБ</span>
       </label>
       <button id="guide-btn" type="button" class="guide-btn" title="Руководство по тренировке">?</button>
-      <button id="vib-guide-btn" type="button" class="vib-guide-btn" title="Коридор 150 центов (±75) вокруг ноты и эталонная синусоида 5.5 Гц на графике">Эталон</button>
+      <button id="vib-guide-btn" type="button" class="vib-guide-btn" title="Коридор 150 центов (±75) вокруг ноты и эталонная синусоида на графике">Эталон</button>
+      <button id="metronome-btn" type="button" class="vib-guide-btn" title="Метроном: клик на каждый 4-й качок волны; темп задаёт и синусоиду">Метроном</button>
+      <label class="gate-control" title="Темп метронома и синусоиды (клик = каждый 4-й качок волны)">
+        <span class="gate-label">BPM</span>
+        <input type="range" id="bpm" min="55" max="95" step="1" value="83" />
+        <span class="gate-value" id="bpm-value">83</span>
+      </label>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
     </div>
@@ -118,6 +128,55 @@ function downloadTsv(): void {
 }
 
 exportBtnEl.addEventListener("click", downloadTsv);
+
+const metronomeBtnEl =
+  document.querySelector<HTMLButtonElement>("#metronome-btn")!;
+const bpmSliderEl = document.querySelector<HTMLInputElement>("#bpm")!;
+const bpmValueEl = document.querySelector<HTMLSpanElement>("#bpm-value")!;
+
+/** Wave tempo in Hz — shared by the reference sine and the metronome. */
+let refVibHz = VIB_REF_HZ;
+let metronome: Metronome | null = null;
+
+function storedBpm(): number {
+  const v = Number.parseFloat(localStorage.getItem("voxmetrics.bpm") ?? "");
+  if (!Number.isFinite(v)) return Math.round(vibHzToBpm(VIB_REF_HZ));
+  return Math.min(95, Math.max(55, Math.round(v)));
+}
+
+function applyBpm(restartMetronome: boolean): void {
+  const bpm = Number.parseInt(bpmSliderEl.value, 10);
+  refVibHz = bpmToVibHz(bpm);
+  bpmValueEl.textContent = String(bpm);
+  localStorage.setItem("voxmetrics.bpm", String(bpm));
+  if (restartMetronome && metronome?.isOn()) metronome.start(bpm);
+  pitchPlot.setData([pitchX, pitchMidi]);
+}
+
+function applyMetronomeState(): void {
+  metronomeBtnEl.classList.toggle("on", metronome?.isOn() ?? false);
+}
+
+metronomeBtnEl.addEventListener("click", () => {
+  if (!audioCtx || audioCtx.state === "closed") {
+    statusEl.textContent = "Нажмите «Начать» — метроном работает со сессией";
+    return;
+  }
+  if (!metronome) metronome = createMetronome(audioCtx);
+  if (metronome.isOn()) {
+    metronome.stop();
+  } else {
+    metronome.start(Number.parseInt(bpmSliderEl.value, 10));
+  }
+  applyMetronomeState();
+});
+
+bpmSliderEl.value = String(storedBpm());
+// live-drag: retune the sine instantly; the metronome only restarts once
+// the drag settles (change event) to avoid machine-gunning accent clicks
+bpmSliderEl.addEventListener("input", () => applyBpm(false));
+bpmSliderEl.addEventListener("change", () => applyBpm(true));
+refVibHz = bpmToVibHz(storedBpm());
 
 let vibGuideOn =
   localStorage.getItem("voxmetrics.vibguide") !== "0";
@@ -293,7 +352,7 @@ function chartSize(): { width: number; height: number } {
 function drawNoteGrid(u: uPlot): void {
   if (vibGuideOn) {
     const center = visibleVoicedMedian(pitchMidi);
-    drawVibratoGuide(u, center == null ? null : computeVibratoGuide(center));
+    drawVibratoGuide(u, center == null ? null : computeVibratoGuide(center, refVibHz));
   }
   const { ctx } = u;
   const yScale = u.scales.y;
@@ -458,6 +517,8 @@ function releasePartialStart(): void {
   captureNode = null;
   notch = null;
   gate = null;
+  metronome?.stop();
+  metronome = null;
   dspWorker.postMessage({ type: "stop" });
   analyserWorker.postMessage({ type: "stop" });
   stopChartLoop();
@@ -539,6 +600,9 @@ function stop(): void {
   active = false;
   notch = null;
   gate = null;
+  metronome?.stop();
+  metronome = null;
+  applyMetronomeState();
   dspWorker.postMessage({ type: "stop" });
   analyserWorker.postMessage({ type: "stop" });
   captureNode?.port.close();

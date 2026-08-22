@@ -1,14 +1,25 @@
 import uPlot from "uplot";
 
-/** Reference vibrato profile derived from performer analysis (see guide). */
-export const VIB_REF_HZ = 5.5;
 /**
- * Sine amplitude in semitones: 150 cents peak-to-peak sweep (= ±75 cents),
- * riding the full corridor width edge to edge.
+ * Reference vibrato profile. The wave rate follows the metronome tempo:
+ * 1 click = every 4th wave cycle, so BPM = Hz x 15 (82 BPM = 5.47 Hz ~
+ * the 5.5 Hz performer target; default follows VIB_REF_HZ).
  */
+export const VIB_REF_HZ = 5.5;
+/** Sine amplitude in semitones: 150 cents peak-to-peak sweep (= ±75 cents). */
 export const VIB_REF_SEMI_AMPLITUDE = 0.75;
 /** Corridor half-width in semitones: ±75 cents (150 cents total) around the note. */
 export const VIB_CORRIDOR_SEMI = 0.75;
+
+/** Convert metronome BPM (click per 4 cycles) to wave Hz. */
+export function bpmToVibHz(bpm: number): number {
+  return (bpm / 60) * 4;
+}
+
+/** Convert wave Hz to metronome BPM. */
+export function vibHzToBpm(hz: number): number {
+  return (hz / 4) * 60;
+}
 
 export interface VibratoGuide {
   /** Corridor band in midi units. */
@@ -20,12 +31,15 @@ export interface VibratoGuide {
   amplitude: number;
 }
 
-export function computeVibratoGuide(centerMidi: number): VibratoGuide {
+export function computeVibratoGuide(
+  centerMidi: number,
+  waveHz = VIB_REF_HZ,
+): VibratoGuide {
   return {
     lo: centerMidi - VIB_CORRIDOR_SEMI,
     hi: centerMidi + VIB_CORRIDOR_SEMI,
     center: centerMidi,
-    hz: VIB_REF_HZ,
+    hz: waveHz,
     amplitude: VIB_REF_SEMI_AMPLITUDE,
   };
 }
@@ -120,6 +134,6 @@ export function drawVibratoGuide(
     u.valToPos(Math.min(guide.hi, yScale.max), "y", true) + 12 * uPlot.pxRatio,
     12 * uPlot.pxRatio,
   );
-  ctx.fillText(`${VIB_REF_HZ} Гц`, left + width - pad, labelY);
+  ctx.fillText(`${(guide.hz).toFixed(1)} Гц`, left + width - pad, labelY);
   ctx.restore();
 }
