@@ -139,8 +139,13 @@ describe.skipIf(!available)(
 );
 
 describe("reference fixtures availability", () => {
-  it("fixture WAVs are never tracked by git (copyrighted recordings)", () => {
-    // .gitignore covers tests/fixtures/ — nothing there may enter the index
-    expect(existsSync(FIXTURES)).toBe(true);
-  });
+  it(
+    "skips reference tests when local fixtures are absent (CI, clean clones)",
+    () => {
+      // WAV fixtures are gitignored (copyrighted recordings): the reference
+      // suite runs only on machines with the files copied into
+      // tests/fixtures/, and skips everywhere else.
+      expect(available).toBe(existsSync(join(FIXTURES, REFERENCES[0]!.file)));
+    },
+  );
 });
