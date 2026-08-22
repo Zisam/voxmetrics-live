@@ -9,14 +9,28 @@ import {
 interface Click {
   freq: number;
   gain: number;
+  /** Audio-clock time the click was scheduled for. */
+  at: number;
 }
 
-/** Mock AudioContext capturing every scheduled click as freq/gain pairs. */
+/**
+ * Mock AudioContext with a manually advanced audio clock. The 25 ms
+ * lookahead timer drives ctx.currentTime via a wall→audio mapping.
+ */
 function makeCtx() {
   const clicks: Click[] = [];
   let lastFreq = 0;
+  const state = { audioT: 100, perfT: 10_000 };
   const ctx = {
-    currentTime: 0,
+    get currentTime() {
+      return state.audioT;
+    },
+    getOutputTimestamp: () => ({
+      contextTime: state.audioT,
+      performanceTime: state.perfT,
+    }),
+    outputLatency: 0.0,
+    baseLatency: 0.0,
     destination: {},
     createOscillator: () => ({
       frequency: {
@@ -34,19 +48,18 @@ function makeCtx() {
     }),
     createGain: () => ({
       gain: {
-        // read frequency at click time: metronome sets it after node creation
-        setValueAtTime: vi.fn((v: number) => {
-          clicks.push({ freq: lastFreq, gain: v });
+        setValueAtTime: vi.fn((v: number, t: number) => {
+          clicks.push({ freq: lastFreq, gain: v, at: t });
         }),
         exponentialRampToValueAtTime: vi.fn(),
       },
       connect: vi.fn(),
     }),
   };
-  return { ctx, clicks };
+  return { ctx, clicks, state };
 }
 
-describe("createMetronome", () => {
+describe("createMetronome (lookahead scheduler)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -54,82 +67,59 @@ describe("createMetronome", () => {
     vi.useRealTimers();
   });
 
-  it("clicks an accent then three soft beats at the requested BPM", () => {
-    const { ctx, clicks } = makeCtx();
+  it("schedules clicks on the exact audio-clock grid regardless of timer jitter", () => {
+    const { ctx, clicks, state } = makeCtx();
     const met = createMetronome(ctx as never);
+    const interval = 60 / 83;
 
-    met.start(60); // 1000 ms per beat
-    expect(clicks.length).toBe(1); // immediate accent
+    met.start(83);
+    // advance audio clock alongside fake wall time (25 ms per timer tick)
+    const stepMs = 25;
+    const advance = (ms: number) => {
+      for (let t = 0; t < ms; t += stepMs) {
+        state.audioT += stepMs / 1000;
+        state.perfT += stepMs;
+        vi.advanceTimersByTime(stepMs);
+      }
+    };
+    advance(4000); // ~5 beats at 83 BPM
+
+    met.stop();
+    expect(clicks.length).toBeGreaterThanOrEqual(6);
+
+    // every click sits exactly on the grid t0 + k*interval
+    const t0 = 100.05;
+    clicks.forEach((c, k) => {
+      expect(c.at).toBeCloseTo(t0 + k * interval, 6);
+    });
+
+    // accent pattern: accent at beats 0, 4, ...
     expect(clicks[0]!.freq).toBe(1568);
     expect(clicks[0]!.gain).toBeCloseTo(0.5);
-
-    vi.advanceTimersByTime(3000); // beats 2, 3, 4 — soft
-    expect(clicks.length).toBe(4);
-    for (const c of clicks.slice(1)) {
+    for (const c of clicks.slice(1, 4)) {
       expect(c.freq).toBe(1046.5);
       expect(c.gain).toBeCloseTo(0.3);
     }
-
-    vi.advanceTimersByTime(1000); // beat 1 again — accent
-    expect(clicks.length).toBe(5);
     expect(clicks[4]!.freq).toBe(1568);
 
-    met.stop();
-    vi.advanceTimersByTime(5000);
-    expect(clicks.length).toBe(5); // no clicks after stop
-    expect(met.isOn()).toBe(false);
-    expect(met.getBpm()).toBe(0);
+    // nothing scheduled beyond the lookahead horizon +1 step after stop
+    const before = clicks.length;
+    advance(2000);
+    expect(clicks.length).toBe(before);
   });
 
-  it("BPM controls the interval period", () => {
-    const { ctx, clicks } = makeCtx();
-    const met = createMetronome(ctx as never);
-    met.start(120); // 500 ms per beat
-    vi.advanceTimersByTime(1500);
-    expect(clicks.length).toBe(4); // accent + 3 soft
-    met.stop();
-  });
-
-  it("stop is idempotent and start re-anchors the accent", () => {
-    const { ctx, clicks } = makeCtx();
-    const met = createMetronome(ctx as never);
-    met.stop();
-    met.stop();
-    expect(met.isOn()).toBe(false);
-
-    met.start(83); // ~723 ms per beat
-    vi.advanceTimersByTime(800); // one soft beat lands
-    met.start(83); // restart: fresh accent immediately
-    expect(clicks.length).toBe(3); // accent, soft, accent
-    expect(clicks[0]!.freq).toBe(1568);
-    expect(clicks[2]!.freq).toBe(1568);
-    met.stop();
-  });
-
-  it("start(0) is a no-op", () => {
-    const { ctx, clicks } = makeCtx();
-    const met = createMetronome(ctx as never);
-    met.start(0);
-    vi.advanceTimersByTime(2000);
-    expect(clicks.length).toBe(0);
-    expect(met.isOn()).toBe(false);
-  });
-
-  it("exposes the phase anchor while running, clears it on stop", () => {
-    vi.useRealTimers(); // real performance.now for the anchor
-    const { ctx } = makeCtx();
+  it("anchor maps the first grid click through getOutputTimestamp", () => {
+    const { ctx, state } = makeCtx();
     const met = createMetronome(ctx as never);
     expect(met.anchorWallSec()).toBeNull();
     expect(met.beatIntervalSec()).toBeNull();
 
-    const before = performance.now() / 1000;
     met.start(83);
-    const after = performance.now() / 1000;
+    // first click scheduled at audio t=100.05; wall when heard:
+    // perfT/1000 + (audioT - contextTime) — with 0 latency = 10 + 0.05
     const anchor = met.anchorWallSec();
     expect(anchor).not.toBeNull();
-    expect(anchor!).toBeGreaterThanOrEqual(before);
-    expect(anchor!).toBeLessThanOrEqual(after);
-    // 83 BPM → ~0.7229 s per beat
+    expect(anchor!).toBeCloseTo(state.perfT / 1000 + 0.05, 6);
     expect(met.beatIntervalSec()).toBeCloseTo(60 / 83, 6);
 
     met.stop();
@@ -137,20 +127,38 @@ describe("createMetronome", () => {
     expect(met.beatIntervalSec()).toBeNull();
   });
 
-  it("anchor leads wall time by the audio output latency", () => {
-    vi.useRealTimers();
-    const { ctx } = makeCtx();
-    (ctx as { outputLatency?: number }).outputLatency = 0.2;
-    (ctx as { baseLatency?: number }).baseLatency = 0.01;
+  it("stop is idempotent; start(0) is a no-op", () => {
+    const { ctx, clicks } = makeCtx();
     const met = createMetronome(ctx as never);
+    met.stop();
+    met.stop();
+    expect(met.isOn()).toBe(false);
+    met.start(0);
+    vi.advanceTimersByTime(1000);
+    expect(clicks.length).toBe(0);
+    expect(met.isOn()).toBe(false);
+  });
 
-    const before = performance.now() / 1000;
+  it("restart re-anchors the grid", () => {
+    const { ctx, clicks, state } = makeCtx();
+    const met = createMetronome(ctx as never);
     met.start(83);
-    const after = performance.now() / 1000;
-    const anchor = met.anchorWallSec()!;
-    // visual grid aligned to the HEARD click: anchor ≈ now + 0.21
-    expect(anchor).toBeGreaterThanOrEqual(before + 0.2);
-    expect(anchor).toBeLessThanOrEqual(after + 0.21 + 1e-6);
+    state.audioT += 0.3;
+    state.perfT += 300;
+    vi.advanceTimersByTime(300);
+    const n1 = clicks.length;
+
+    met.start(83);
+    // lookahead buffer primed immediately with the NEW grid
+    expect(clicks.length).toBeGreaterThan(n1);
+    expect(clicks[n1]!.freq).toBe(1568);
+    const t0new = clicks[n1]!.at;
+    // new grid starts 0.05 s after the advanced audio clock (100 + 0.3)
+    expect(t0new).toBeCloseTo(100 + 0.3 + 0.05, 6);
+    // every new click sits on the new grid
+    for (let k = 0; k < clicks.length - n1; k++) {
+      expect(clicks[n1 + k]!.at).toBeCloseTo(t0new + k * (60 / 83), 6);
+    }
     met.stop();
   });
 });
