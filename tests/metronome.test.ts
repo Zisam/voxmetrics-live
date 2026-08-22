@@ -136,6 +136,23 @@ describe("createMetronome", () => {
     expect(met.anchorWallSec()).toBeNull();
     expect(met.beatIntervalSec()).toBeNull();
   });
+
+  it("anchor leads wall time by the audio output latency", () => {
+    vi.useRealTimers();
+    const { ctx } = makeCtx();
+    (ctx as { outputLatency?: number }).outputLatency = 0.2;
+    (ctx as { baseLatency?: number }).baseLatency = 0.01;
+    const met = createMetronome(ctx as never);
+
+    const before = performance.now() / 1000;
+    met.start(83);
+    const after = performance.now() / 1000;
+    const anchor = met.anchorWallSec()!;
+    // visual grid aligned to the HEARD click: anchor ≈ now + 0.21
+    expect(anchor).toBeGreaterThanOrEqual(before + 0.2);
+    expect(anchor).toBeLessThanOrEqual(after + 0.21 + 1e-6);
+    met.stop();
+  });
 });
 
 describe("BPM <-> vibrato Hz conversions", () => {

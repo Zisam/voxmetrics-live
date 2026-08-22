@@ -48,7 +48,14 @@ export function createMetronome(ctx: AudioContext): Metronome {
       if (nextBpm <= 0) return;
       bpm = nextBpm;
       beat = 0;
-      anchor = performance.now() / 1000;
+      // The audible click reaches the ears `latency` seconds after
+      // scheduling; anchor the VISUAL grid (marks + sine) to the heard
+      // click, not the scheduled one — otherwise marks lead the sound by
+      // the output latency (Bluetooth cans: ~200 ms ≈ a 16th at 83 BPM).
+      anchor =
+        performance.now() / 1000 +
+        (ctx.outputLatency ?? 0) +
+        (ctx.baseLatency ?? 0);
       click(true);
       timer = setInterval(() => {
         beat = (beat + 1) % 4;
