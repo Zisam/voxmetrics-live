@@ -496,7 +496,7 @@ async function start(): Promise<void> {
       await audioCtx.resume();
 
       await audioCtx.audioWorklet.addModule(
-        new URL("./audio/capture-processor.ts", import.meta.url),
+        new URL("./audio/capture-processor.js", import.meta.url),
       );
 
       dspWorker.postMessage({ type: "start", sampleRate: audioCtx.sampleRate });
