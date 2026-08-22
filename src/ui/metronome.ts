@@ -9,6 +9,12 @@ export interface Metronome {
   isOn(): boolean;
   /** Beats per minute; 0 when stopped. */
   getBpm(): number;
+  /**
+   * Wall-clock second (performance.now()/1000) of the last start — the
+   * accent anchor. The reference sine phase-locks its rising zero crossing
+   * to this moment so the wave visibly rides the click. Null when stopped.
+   */
+  anchorWallSec(): number | null;
 }
 
 const ACCENT_HZ = 1568;
@@ -18,6 +24,7 @@ export function createMetronome(ctx: AudioContext): Metronome {
   let timer: ReturnType<typeof setInterval> | null = null;
   let bpm = 0;
   let beat = 0;
+  let anchor: number | null = null;
 
   function click(accent: boolean): void {
     const t = ctx.currentTime;
@@ -39,6 +46,7 @@ export function createMetronome(ctx: AudioContext): Metronome {
       if (nextBpm <= 0) return;
       bpm = nextBpm;
       beat = 0;
+      anchor = performance.now() / 1000;
       click(true);
       timer = setInterval(() => {
         beat = (beat + 1) % 4;
@@ -51,12 +59,16 @@ export function createMetronome(ctx: AudioContext): Metronome {
         timer = null;
       }
       bpm = 0;
+      anchor = null;
     },
     isOn(): boolean {
       return timer !== null;
     },
     getBpm(): number {
       return bpm;
+    },
+    anchorWallSec(): number | null {
+      return anchor;
     },
   };
 }

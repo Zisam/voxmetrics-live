@@ -57,9 +57,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button id="vib-guide-btn" type="button" class="vib-guide-btn" title="Коридор 150 центов (±75) вокруг ноты и эталонная синусоида на графике">Эталон</button>
       <button id="metronome-btn" type="button" class="vib-guide-btn" title="Метроном: клик на каждый 4-й качок волны; темп задаёт и синусоиду">Метроном</button>
       <label class="gate-control" title="Темп метронома и синусоиды (клик = каждый 4-й качок волны)">
-        <span class="gate-label">BPM</span>
+        <span class="gate-label">Темп</span>
         <input type="range" id="bpm" min="55" max="95" step="1" value="83" />
-        <span class="gate-value" id="bpm-value">83</span>
+        <span class="gate-value" id="bpm-value">83 BPM · 5.5 Гц</span>
       </label>
       <span id="status" class="status">Готов</span>
       <span class="privacy">Аудио не покидает браузер</span>
@@ -144,13 +144,21 @@ function storedBpm(): number {
   return Math.min(95, Math.max(55, Math.round(v)));
 }
 
+function formatBpmLabel(bpm: number): string {
+  return `${bpm} BPM · ${bpmToVibHz(bpm).toFixed(1)} Гц`;
+}
+
 function applyBpm(restartMetronome: boolean): void {
   const bpm = Number.parseInt(bpmSliderEl.value, 10);
   refVibHz = bpmToVibHz(bpm);
-  bpmValueEl.textContent = String(bpm);
+  bpmValueEl.textContent = formatBpmLabel(bpm);
   localStorage.setItem("voxmetrics.bpm", String(bpm));
   if (restartMetronome && metronome?.isOn()) metronome.start(bpm);
   pitchPlot.setData([pitchX, pitchMidi]);
+}
+
+function syncBpmLabel(): void {
+  bpmValueEl.textContent = formatBpmLabel(storedBpm());
 }
 
 function applyMetronomeState(): void {
@@ -177,6 +185,7 @@ bpmSliderEl.value = String(storedBpm());
 bpmSliderEl.addEventListener("input", () => applyBpm(false));
 bpmSliderEl.addEventListener("change", () => applyBpm(true));
 refVibHz = bpmToVibHz(storedBpm());
+syncBpmLabel();
 
 let vibGuideOn =
   localStorage.getItem("voxmetrics.vibguide") !== "0";
@@ -352,7 +361,14 @@ function chartSize(): { width: number; height: number } {
 function drawNoteGrid(u: uPlot): void {
   if (vibGuideOn) {
     const center = visibleVoicedMedian(pitchMidi);
-    drawVibratoGuide(u, center == null ? null : computeVibratoGuide(center, refVibHz));
+    const anchor = metronome?.isOn() ? metronome.anchorWallSec() : null;
+    drawVibratoGuide(
+      u,
+      center == null ? null : computeVibratoGuide(center, refVibHz),
+      anchor != null
+        ? { anchorWallSec: anchor, nowWallSec: performance.now() / 1000 }
+        : null,
+    );
   }
   const { ctx } = u;
   const yScale = u.scales.y;
