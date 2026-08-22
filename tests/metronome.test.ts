@@ -114,6 +114,24 @@ describe("createMetronome", () => {
     expect(clicks.length).toBe(0);
     expect(met.isOn()).toBe(false);
   });
+
+  it("exposes the phase anchor while running, clears it on stop", () => {
+    vi.useRealTimers(); // real performance.now for the anchor
+    const { ctx } = makeCtx();
+    const met = createMetronome(ctx as never);
+    expect(met.anchorWallSec()).toBeNull();
+
+    const before = performance.now() / 1000;
+    met.start(83);
+    const after = performance.now() / 1000;
+    const anchor = met.anchorWallSec();
+    expect(anchor).not.toBeNull();
+    expect(anchor!).toBeGreaterThanOrEqual(before);
+    expect(anchor!).toBeLessThanOrEqual(after);
+
+    met.stop();
+    expect(met.anchorWallSec()).toBeNull();
+  });
 });
 
 describe("BPM <-> vibrato Hz conversions", () => {

@@ -61,13 +61,25 @@ export function visibleVoicedMedian(
 }
 
 /**
+ * Phase lock of the reference sine to the metronome: chart x maps to wall
+ * time via `nowWallSec - (windowSec - x)`; the sine's rising zero crossing
+ * lands exactly on the metronome accent anchor.
+ */
+export interface SinePhaseLock {
+  anchorWallSec: number;
+  nowWallSec: number;
+}
+
+/**
  * Draw the vibrato reference overlay under the pitch curve: a 150-cent
- * corridor around the held note (dashed bounds, faint fill) and a 5.5 Hz
- * sine with 150 cents peak-to-peak exactly filling the corridor.
+ * corridor around the held note (dashed bounds, faint fill) and a 150-cent
+ * peak-to-peak sine exactly filling the corridor. With a phase lock the
+ * wave visibly moves in time with the click instead of scrolling freely.
  */
 export function drawVibratoGuide(
   u: uPlot,
   guide: VibratoGuide | null,
+  phaseLock: SinePhaseLock | null = null,
 ): void {
   if (!guide) return;
   const { ctx } = u;
@@ -108,12 +120,18 @@ export function drawVibratoGuide(
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   const steps = Math.max(64, Math.floor(width));
+  const windowSec = u.scales.x.max ?? 0;
   for (let i = 0; i <= steps; i++) {
     const px = left + (width * i) / steps;
     const t = u.posToVal(px, "x", true);
+    // wall time of this chart position: NOW (x = windowSec) is nowWallSec
+    const phaseT =
+      phaseLock != null
+        ? phaseLock.nowWallSec - (windowSec - t) - phaseLock.anchorWallSec
+        : t;
     const midi =
       guide.center +
-      guide.amplitude * Math.sin(2 * Math.PI * guide.hz * t);
+      guide.amplitude * Math.sin(2 * Math.PI * guide.hz * phaseT);
     const y = u.valToPos(midi, "y", true);
     if (i === 0) ctx.moveTo(px, y);
     else ctx.lineTo(px, y);
