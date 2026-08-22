@@ -18,6 +18,30 @@ export interface TremoloResult {
 }
 
 /**
+ * Real vibrato drags an amplitude-modulation side effect at (nearly) its own
+ * rate through the formant spectrum — measured on performer references
+ * (DOGMA vibrato: AM 5.83 dB at the 5.77 Hz vibrato rate). Such AM is not
+ * independent tremolo. A detected AM counts as tremolo only when pitch
+ * vibrato is absent, or the AM rate differs clearly from the vibrato rate
+ * AND the depth is pronounced.
+ */
+export const TREMOLO_VIB_RATE_TOL_HZ = 1.5;
+export const TREMOLO_WITH_VIBRATO_MIN_DB = 6;
+
+export function suppressVibratoAm(
+  tremolo: TremoloResult | null,
+  vibratoRateHz: number | null,
+): TremoloResult | null {
+  if (!tremolo) return null;
+  if (vibratoRateHz == null) return tremolo;
+  const sameRate =
+    Math.abs(tremolo.rate_hz - vibratoRateHz) <= TREMOLO_VIB_RATE_TOL_HZ;
+  if (sameRate) return null;
+  if (tremolo.depth_db < TREMOLO_WITH_VIBRATO_MIN_DB) return null;
+  return tremolo;
+}
+
+/**
  * Detect tremolo on the dB envelope of voiced frame RMS. Returns null when
  * there is no clear 3-9 Hz amplitude modulation on the longest voiced run.
  */

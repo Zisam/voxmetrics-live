@@ -14,7 +14,7 @@ import {
   localJitterPct,
   localShimmerDb,
 } from "./voice-quality.ts";
-import { analyseTremolo } from "./tremolo.ts";
+import { analyseTremolo, suppressVibratoAm } from "./tremolo.ts";
 import { REF_BAND, SF_BAND } from "./constants.ts";
 
 export interface AnalyseOutput {
@@ -75,13 +75,14 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
     }
   }
 
+  const vibrato = analyseVibrato(f0, voiced, rate);
   const metrics: MetricsSnapshot = {
     when: new Date().toISOString().slice(0, 19),
     duration_s: Math.round((x.length / rate) * 100) / 100,
     sample_rate: rate,
     voiced_share: voiced.length ? Math.round((voicedCount / voiced.length) * 1000) / 1000 : 0,
     f0_median_hz: f0Median,
-    vibrato: analyseVibrato(f0, voiced, rate),
+    vibrato,
     h1_h2_db: analyseH1H2(x, rate, f0, voiced),
     sf_balance_db: sfBalance,
     spectral_centroid_hz: centroid,
@@ -94,7 +95,12 @@ export function analyseBuffer(x: Float64Array, rate: number): AnalyseOutput {
       x.length >= rate ? round2(localShimmerDb(frameRms, voiced)) : null,
     cpp_db: x.length >= rate ? round2(cepstralPeakProminenceDb(x, rate)) : null,
     tremolo:
-      x.length >= rate ? analyseTremolo(frameRms, voiced, rate) : null,
+      x.length >= rate
+        ? suppressVibratoAm(
+            analyseTremolo(frameRms, voiced, rate),
+            vibrato?.rate_hz ?? null,
+          )
+        : null,
   };
 
   return { metrics, ltas };
