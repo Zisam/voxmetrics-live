@@ -109,12 +109,21 @@ function downloadTsv(): void {
   const a = document.createElement("a");
   a.href = url;
   a.download = tsvFilename();
+  document.body.append(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  // revoke late: Safari/Firefox process the download async and abort on
+  // immediate revocation
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
   statusEl.textContent = `Скачано строк метрик: ${sessionLog.size()}`;
 }
 
+function refreshExportBtn(): void {
+  exportBtnEl.disabled = sessionLog.size() === 0;
+}
+
 exportBtnEl.addEventListener("click", downloadTsv);
+refreshExportBtn();
 
 let vibGuideOn =
   localStorage.getItem("voxmetrics.vibguide") !== "0";
@@ -425,7 +434,10 @@ function handleWorkerOut(msg: WorkerOutMessage): void {
   if (msg.type === "f0") updatePitchChart(msg.points);
   if (msg.type === "metrics") {
     metricsPanel.update(msg.metrics);
-    if (active) sessionLog.add(msg.metrics);
+    if (active) {
+      sessionLog.add(msg.metrics);
+      refreshExportBtn();
+    }
     const [top] = computeCoachHints(msg.metrics);
     if (top) showCoachBanner(top.text, top.level);
   }
@@ -477,6 +489,7 @@ async function start(): Promise<void> {
 
     // mic granted: the previous session's exportable data is no longer needed
     sessionLog.clear();
+    refreshExportBtn();
 
     try {
       audioCtx = new AudioContext();
