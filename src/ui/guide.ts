@@ -37,6 +37,15 @@ export const VIBRATO_REFERENCES: VibratoReference[] = [
     source: "",
     measurements: [{ hz: 5.64, cents: 146 }],
   },
+  {
+    artist: "M. Shadows (Avenged Sevenfold)",
+    source: "«The Stage»",
+    measurements: [
+      { hz: 5.79, cents: 169 },
+      { hz: 5.64, cents: 125 },
+      { hz: 5.29, cents: 67 },
+    ],
+  },
 ];
 
 export interface GuideExercise {

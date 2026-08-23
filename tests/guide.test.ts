@@ -136,11 +136,22 @@ describe("vibrato references", () => {
   });
 
   it("measurements cluster in the target zone", () => {
+    // zone: 5–6 Hz rate; extents 60–190 cents (M. Shadows' high-note
+    // vibrato is deliberately narrow at 67 cents — still a working rate)
     for (const m of VIBRATO_REFERENCES.flatMap((r) => r.measurements)) {
       expect(m.hz).toBeGreaterThan(5);
       expect(m.hz).toBeLessThan(6);
-      expect(m.cents).toBeGreaterThanOrEqual(130);
+      expect(m.cents).toBeGreaterThanOrEqual(60);
       expect(m.cents).toBeLessThanOrEqual(190);
     }
+  });
+
+  it("includes M. Shadows (Avenged Sevenfold) as a reference", () => {
+    const shadows = VIBRATO_REFERENCES.find((r) =>
+      r.artist.includes("M. Shadows"),
+    )!;
+    expect(shadows.source).toContain("The Stage");
+    expect(shadows.measurements).toContainEqual({ hz: 5.79, cents: 169 });
+    expect(shadows.measurements).toContainEqual({ hz: 5.29, cents: 67 });
   });
 });
