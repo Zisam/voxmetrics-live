@@ -54,9 +54,9 @@ export interface GuideExercise {
 }
 
 const VIBRATO_TARGETS: Record<Locale, string> = {
-  ru: "Ориентир по референсам: волна около 5.5 Гц с размахом 150 центов и стабильностью темпа ≤ 10 %. Тренируется как барабанная дробь: клик метронома — на каждый 4-й качок волны (5.5 Гц = 82.5, на практике 83 BPM). Ползунок «Темп» задаёт и клик, и синусоиду-эталон.",
-  en: "Reference target: a wave near 5.5 Hz with a 150-cent extent and tempo stability ≤ 10 %. Trained like a drum roll: the metronome click lands on every 4th wave cycle (5.5 Hz = 82.5, in practice 83 BPM). The “Tempo” slider drives both the click and the reference sine.",
-  ja: "参照目標：約5.5 Hz、振幅150セント、テンポ安定 ≤ 10 %の波。ドラムロールのように鍛えます：クリックは波の4サイクル目ごと（5.5 Hz = 82.5、実際は83 BPM）。「テンポ」スライダーがクリックも参照サイン波も動かします。",
+  ru: "Ориентир по референсам: волна около 5.5 Hz с размахом 150 ¢ и стабильностью темпа ≤ 10 %. Тренируется как барабанная дробь: клик метронома — на каждый 4-й качок волны (5.5 Hz = 82.5, на практике 83 BPM). Ползунок «Темп» задаёт и клик, и синусоиду-эталон.",
+  en: "Reference target: a wave near 5.5 Hz with a 150 ¢ extent and tempo stability ≤ 10 %. Trained like a drum roll: the metronome click lands on every 4th wave cycle (5.5 Hz = 82.5, in practice 83 BPM). The “Tempo” slider drives both the click and the reference sine.",
+  ja: "参照目標：約5.5 Hz、振幅150 ¢、テンポ安定 ≤ 10 %の波。ドラムロールのように鍛えます：クリックは波の4サイクル目ごと（5.5 Hz = 82.5、実際は83 BPM）。「テンポ」スライダーがクリックも参照サイン波も動かします。",
 };
 
 export function vibratoTarget(): string {
@@ -337,12 +337,6 @@ const REF_TABLE_HEADERS: Record<Locale, string[]> = {
   ja: ["歌手", "周波数", "振幅"],
 };
 
-const CENTS_LABEL: Record<Locale, string> = {
-  ru: "центов",
-  en: "cents",
-  ja: "セント",
-};
-
 export function renderGuide(root: HTMLElement): void {
   const locale = getLocale();
   const d = t();
@@ -370,7 +364,8 @@ export function renderGuide(root: HTMLElement): void {
               ${VIBRATO_REFERENCES.flatMap((r) =>
                   r.measurements.map((m) => {
                     const src = r.source ? ` <span class="grefsrc">(${r.source})</span>` : "";
-                    return `<tr><td>${r.artist}${src}</td><td>${m.hz} Hz</td><td>${m.cents} ${CENTS_LABEL[locale]}</td></tr>`;
+                    // SI units are locale-neutral: "5.8 Hz" / "190 ¢"
+                    return `<tr><td>${r.artist}${src}</td><td>${m.hz} Hz</td><td>${m.cents} ¢</td></tr>`;
                   }),
                 )
                 .join("")}

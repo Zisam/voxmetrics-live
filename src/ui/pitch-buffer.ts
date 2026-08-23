@@ -219,7 +219,7 @@ export function hudFromPoint(point: F0Point | null): HudState {
     note: noteName(point.f0_hz),
     cents: `${sign}${cents} ¢`,
     centsClass: "hud-cents" + (Math.abs(cents) <= 10 ? " in-tune" : ""),
-    hz: `${point.f0_hz.toFixed(1)} Гц`,
+    hz: `${point.f0_hz.toFixed(1)} Hz`,
   };
 }
 

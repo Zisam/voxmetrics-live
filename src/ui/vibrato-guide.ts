@@ -194,6 +194,6 @@ export function drawVibratoGuide(
     u.valToPos(Math.min(guide.hi, yScale.max), "y", true) + 12 * uPlot.pxRatio,
     12 * uPlot.pxRatio,
   );
-  ctx.fillText(`${(guide.hz).toFixed(1)} Гц`, left + width - pad, labelY);
+  ctx.fillText(`${guide.hz.toFixed(1)} Hz`, left + width - pad, labelY);
   ctx.restore();
 }

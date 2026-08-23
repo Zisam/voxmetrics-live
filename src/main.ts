@@ -551,7 +551,7 @@ const pitchPlot = new uPlot(
         grid: { show: true, stroke: "#1e2230" },
         ticks: { show: true, stroke: "#444" },
         values: (_u, vals) =>
-          vals.map((v) => (Number.isInteger(v) ? `${v} с` : "")),
+          vals.map((v) => (Number.isInteger(v) ? `${v} s` : "")),
       },
       {
         stroke: "#888",

@@ -185,8 +185,8 @@ describe("medianNoteLabel", () => {
 
 describe("fmtDb", () => {
   it("formats signed dB with one decimal", () => {
-    expect(fmtDb(3.56)).toBe("+3.6 дБ");
-    expect(fmtDb(-2.44)).toBe("-2.4 дБ");
+    expect(fmtDb(3.56)).toBe("+3.6 dB");
+    expect(fmtDb(-2.44)).toBe("-2.4 dB");
   });
 
   it("returns em dash for null", () => {
