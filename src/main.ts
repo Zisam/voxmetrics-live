@@ -626,7 +626,11 @@ function handleWorkerOut(msg: WorkerOutMessage): void {
   if (msg.type === "metrics") {
     metricsPanel.update(msg.metrics);
     if (active) sessionLog.add(msg.metrics);
-    const [top] = computeCoachHints(msg.metrics);
+    const [top] = computeCoachHints(msg.metrics, 2, {
+      targetWaveHz: metronome?.isOn()
+        ? bpmToVibHz(Number.parseInt(bpmSliderEl.value, 10))
+        : undefined,
+    });
     if (top) {
       showCoachBanner(coachText(top.key as CoachKey, getLocale()), top.level);
     }

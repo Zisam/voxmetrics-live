@@ -32,6 +32,7 @@ export type CoachKey =
   | "vibNarrower"
   | "vibWider"
   | "vibSmoother"
+  | "inThePocket"
   | "holdNote"
   | "pitchShaky"
   | "volumeWobbling"
@@ -75,6 +76,11 @@ const COACH_TEXT: Record<CoachKey, Record<Locale, string>> = {
     ru: "Волна ровнее!",
     en: "Smoother wave!",
     ja: "波をなめらかに！",
+  },
+  inThePocket: {
+    ru: "В кармане!",
+    en: "In the pocket!",
+    ja: "ポケットにはまった！",
   },
   holdNote: {
     ru: "Держите ноту!",
@@ -134,6 +140,36 @@ const PRIO = {
   praise: 10,
 } as const;
 
+/** Practice context: when the metronome runs, rate hints follow the
+ * trained step instead of the absolute reference band. */
+export interface CoachContext {
+  /** Target wave rate in Hz the user is drilling (metronome tempo × 4). */
+  targetWaveHz?: number;
+}
+
+/** Tolerance around the trained step: within ±15 % of the target the
+ * user IS on the metronome — no rate hint should fire. */
+const TARGET_RATE_TOL = 0.15;
+
+/**
+ * Rate band for coaching: with a metronome target, ±15 % around it;
+ * otherwise the absolute reference band. Returns null when in-band.
+ */
+function rateOffense(
+  rateHz: number,
+  ctx?: CoachContext,
+): "vibFaster" | "vibSlower" | null {
+  if (ctx?.targetWaveHz != null && ctx.targetWaveHz > 0) {
+    const tol = ctx.targetWaveHz * TARGET_RATE_TOL;
+    if (rateHz < ctx.targetWaveHz - tol) return "vibFaster";
+    if (rateHz > ctx.targetWaveHz + tol) return "vibSlower";
+    return null;
+  }
+  if (rateHz < VIB_RATE_GOOD[0]) return "vibFaster";
+  if (rateHz > VIB_RATE_GOOD[1]) return "vibSlower";
+  return null;
+}
+
 /**
  * Turn metrics into short, action-oriented coaching hints (rhythm-game
  * style banners). Locale-independent: returns keys, rendered by the caller.
@@ -141,6 +177,7 @@ const PRIO = {
 export function computeCoachHints(
   metrics: MetricsSnapshot,
   maxHints = 2,
+  ctx?: CoachContext,
 ): CoachHint[] {
   const hints: CoachHint[] = [];
   const push = (level: HintLevel, priority: number, key: CoachKey) => {
@@ -158,10 +195,12 @@ export function computeCoachHints(
 
   const v = metrics.vibrato;
   if (v) {
-    if (v.rate_hz < VIB_RATE_GOOD[0]) {
-      push("warn", PRIO.vibratoRate, "vibFaster");
-    } else if (v.rate_hz > VIB_RATE_GOOD[1]) {
-      push("warn", PRIO.vibratoRate, "vibSlower");
+    const offense = rateOffense(v.rate_hz, ctx);
+    if (offense) {
+      push("warn", PRIO.vibratoRate, offense);
+    } else if (ctx?.targetWaveHz != null) {
+      // on the trained step — acknowledge the lock-in
+      push("good", PRIO.vibratoRate, "inThePocket");
     }
     if (v.extent_cents_direct > VIB_EXTENT_GOOD[1]) {
       push("warn", PRIO.vibratoExtent, "vibNarrower");

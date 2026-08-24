@@ -49,6 +49,40 @@ describe("computeCoachHints", () => {
     expect(hints[0]!.key).toBe("vibFaster");
   });
 
+  it("with a metronome target, drilling below the absolute band is fine", () => {
+    const v = snapshot().vibrato!;
+    // 60 BPM step = 4 Hz wave — below the 4.5 absolute floor
+    const hints = computeCoachHints(
+      snapshot({ vibrato: { ...v, rate_hz: 4.0 } }),
+      2,
+      { targetWaveHz: 4.0 },
+    );
+    expect(hints.some((h) => h.key === "vibFaster")).toBe(false);
+    expect(hints.some((h) => h.key === "inThePocket")).toBe(true);
+  });
+
+  it("metronome target tolerance is ±15 %", () => {
+    const v = snapshot().vibrato!;
+    // 4.0 target: 4.5 Hz is within +12.5 % → in the pocket
+    expect(
+      computeCoachHints(snapshot({ vibrato: { ...v, rate_hz: 4.5 } }), 2, {
+        targetWaveHz: 4.0,
+      }).some((h) => h.key === "inThePocket"),
+    ).toBe(true);
+    // 4.9 Hz is +22.5 % → too fast for the step
+    expect(
+      computeCoachHints(snapshot({ vibrato: { ...v, rate_hz: 4.9 } }), 2, {
+        targetWaveHz: 4.0,
+      }).some((h) => h.key === "vibSlower"),
+    ).toBe(true);
+    // 3.0 Hz is −25 % → behind the step
+    expect(
+      computeCoachHints(snapshot({ vibrato: { ...v, rate_hz: 3.0 } }), 2, {
+        targetWaveHz: 4.0,
+      }).some((h) => h.key === "vibFaster"),
+    ).toBe(true);
+  });
+
   it("fast vibrato gets the calm-down hint", () => {
     const v = snapshot().vibrato!;
     const hints = computeCoachHints(snapshot({ vibrato: { ...v, rate_hz: 9 } }));
