@@ -77,6 +77,9 @@ const days = new Map(); // date -> { rows, vibRows, rate[], ext[], reg[], pcv[],
 let totalRows = 0;
 let totalVib = 0;
 const skipped = [];
+/** Best clean attempt: highest rate row (with file/time provenance). */
+let bestOverall = null;
+const bestByDay = new Map();
 
 for (const f of files) {
   const path = join(dir, f);
@@ -100,6 +103,17 @@ for (const f of files) {
     : rows.length * (2 / 60);
   const vibRows = rows.filter((r) => r.rate != null && r.rate > 0);
   const day = (rows[0].time || "").slice(0, 10);
+
+  // best attempt: highest rate among clean rows (regularity ≥ 40 keeps
+  // glissandi and detector artifacts out of the "best" profile)
+  const REG_MIN_FOR_BEST = 40;
+  for (const r of vibRows) {
+    if ((r.regularity ?? 0) < REG_MIN_FOR_BEST) continue;
+    const better = (b) =>
+      b == null || r.rate > b.rate || (r.rate === b.rate && (r.steady ?? 0) > (b.steady ?? 0));
+    if (better(bestOverall)) bestOverall = { ...r, file: f };
+    if (better(bestByDay.get(day) ?? null)) bestByDay.set(day, { ...r, file: f });
+  }
 
   const d = days.get(day) ?? {
     sessions: 0,
@@ -198,6 +212,35 @@ if (dayKeys.length >= 2) {
     L.push(`- Rate p50: ${dayKeys[0]} → ${dayKeys[dayKeys.length - 1]}: **${first.p50.toFixed(2)} → ${last.p50.toFixed(2)} Hz** (${dMed >= 0 ? "+" : ""}${dMed.toFixed(2)})`);
     L.push(`- Устойчивый верх (p90): **${first.p90.toFixed(2)} → ${last.p90.toFixed(2)} Hz** (${dTop >= 0 ? "+" : ""}${dTop.toFixed(2)}) — по нему видно рост лестницы`);
     L.push(`- Вершина дня: ${first.max.toFixed(2)} → ${last.max.toFixed(2)} Hz`);
+  }
+}
+
+// best-attempt profile: the day-by-day race for the highest clean rate
+if (bestByDay.size) {
+  L.push("");
+  L.push("## Лучшие попытки по дням (макс. частота, регулярность ≥ 40 %)");
+  L.push("");
+  L.push("| Дата | Rate (Hz) | Extent (¢) | Reg (%) | periodCV | Steady (s) | Время | Файл |");
+  L.push("|---|---|---|---|---|---|---|---|");
+  for (const [day, b] of [...bestByDay.entries()].sort()) {
+    L.push(
+      `| ${day} | **${b.rate.toFixed(2)}** | ${b.extent != null ? b.extent.toFixed(0) : "—"} | ` +
+        `${b.regularity != null ? b.regularity.toFixed(0) : "—"} | ${b.pcv != null ? b.pcv.toFixed(2) : "—"} | ` +
+        `${b.steady != null ? b.steady.toFixed(1) : "—"} | ${(b.time || "").slice(11, 19)} | ${b.file} |`,
+    );
+  }
+  if (bestOverall) {
+    const b = bestOverall;
+    L.push("");
+    L.push(`**Абсолютный рекорд: ${b.rate.toFixed(2)} Hz** — ${b.extent != null ? `${b.extent.toFixed(0)} ¢, ` : ""}` +
+      `reg ${b.regularity != null ? b.regularity.toFixed(0) : "—"} %, periodCV ${b.pcv != null ? b.pcv.toFixed(2) : "—"}, ` +
+      `${b.steady != null ? `${b.steady.toFixed(1)} с` : "—"} — ${(b.time || "").replace("T", " ").slice(0, 19)} (${b.file})`);
+    if (b.pcv != null) {
+      const verdict =
+        b.pcv <= 0.1 ? "темп держится — рекорд честный" :
+        b.pcv <= 0.2 ? "темп слегка плыл" : "темп плыл сильно — рекорд спорный";
+      L.push(`- periodCV ${b.pcv.toFixed(2)}: ${verdict}`);
+    }
   }
 }
 
