@@ -135,6 +135,7 @@ const PRIO = {
   steady: 45,
   jitter: 40,
   shimmer: 35,
+  onStep: 30,
   singer: 25,
   cpp: 20,
   praise: 10,
@@ -199,8 +200,9 @@ export function computeCoachHints(
     if (offense) {
       push("warn", PRIO.vibratoRate, offense);
     } else if (ctx?.targetWaveHz != null) {
-      // on the trained step — acknowledge the lock-in
-      push("good", PRIO.vibratoRate, "inThePocket");
+      // on the trained step — acknowledge the lock-in, but keep it below
+      // every corrective warning so it never masks them in the top-2 slice
+      push("good", PRIO.onStep, "inThePocket");
     }
     if (v.extent_cents_direct > VIB_EXTENT_GOOD[1]) {
       push("warn", PRIO.vibratoExtent, "vibNarrower");
@@ -210,7 +212,9 @@ export function computeCoachHints(
     if (
       v.regularity != null &&
       v.regularity < VIB_REGULARITY_GOOD &&
-      !hints.some((h) => h.priority === PRIO.vibratoRate)
+      !hints.some(
+        (h) => h.priority === PRIO.vibratoRate && h.level === "warn",
+      )
     ) {
       push("warn", PRIO.vibratoRegularity, "vibSmoother");
     }

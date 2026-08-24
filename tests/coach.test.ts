@@ -145,6 +145,30 @@ describe("computeCoachHints", () => {
     expect(["excellent", "cleanSound"]).toContain(hints[0]!.key);
   });
 
+  it("on-step praise never masks a corrective warning", () => {
+    const v = snapshot().vibrato!;
+    // on the 83 BPM step but irregular — regularity advice must win
+    const hints = computeCoachHints(
+      snapshot({
+        vibrato: { ...v, rate_hz: 5.5, regularity: 0.4 },
+      }),
+      2,
+      { targetWaveHz: 5.53 },
+    );
+    expect(hints.some((h) => h.key === "vibSmoother")).toBe(true);
+    expect(hints.some((h) => h.key === "inThePocket")).toBe(true);
+    // the warn outranks the praise in the sorted slice
+    expect(hints[0]!.level).toBe("warn");
+
+    // on-step with shaky pitch: pitch advice outranks the praise too
+    const shaky = computeCoachHints(
+      snapshot({ jitter_pct: 0.4 }),
+      2,
+      { targetWaveHz: 5.53 },
+    );
+    expect(shaky[0]!.key).toBe("pitchShaky");
+  });
+
   it("caps at two hints by priority", () => {
     const v = snapshot().vibrato!;
     const hints = computeCoachHints(
