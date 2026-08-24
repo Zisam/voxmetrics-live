@@ -61,9 +61,12 @@ function stats(values) {
   return {
     n: values.length,
     mean: values.reduce((a, b) => a + b, 0) / values.length,
+    min: sorted[0],
     p25: q(0.25),
     p50: q(0.5),
     p75: q(0.75),
+    p90: q(0.9),
+    max: sorted[sorted.length - 1],
   };
 }
 
@@ -133,7 +136,7 @@ L.push("");
 L.push(`Файлов: ${files.length}${skipped.length ? ` (пропущено: ${skipped.length})` : ""}, строк метрик: ${totalRows}, с вибрато: ${totalVib}.`);
 L.push("");
 
-L.push("| Дата | Сессий | Минут | Строк | С вибрато | Rate p50 (Hz) | Rate p25–p75 | Extent p50 (¢) | Reg p50 (%) | periodCV p50 |");
+L.push("| Дата | Сесс. | Мин | Строк | Vib | Rate min→p50→max (Hz) | Rate p90 | Extent min→p50→max (¢) | Reg p50 (%) | periodCV p50 |");
 L.push("|---|---|---|---|---|---|---|---|---|---|");
 const allRate = [];
 const allExt = [];
@@ -152,8 +155,10 @@ for (const [day, d] of [...days.entries()].sort()) {
   allPcv.push(...d.pcv);
   L.push(
     `| ${day} | ${d.sessions} | ${d.minutes.toFixed(0)} | ${d.rows} | ${d.vibRows} | ` +
-      `${sRate ? sRate.p50.toFixed(2) : "—"} | ${sRate ? `${sRate.p25.toFixed(2)}–${sRate.p75.toFixed(2)}` : "—"} | ` +
-      `${sExt ? sExt.p50.toFixed(0) : "—"} | ${sReg ? sReg.p50.toFixed(0) : "—"} | ${sPcv ? sPcv.p50.toFixed(2) : "—"} |`,
+      `${sRate ? `${sRate.min.toFixed(2)} → ${sRate.p50.toFixed(2)} → ${sRate.max.toFixed(2)}` : "—"} | ` +
+      `${sRate ? sRate.p90.toFixed(2) : "—"} | ` +
+      `${sExt ? `${sExt.min.toFixed(0)} → ${sExt.p50.toFixed(0)} → ${sExt.max.toFixed(0)}` : "—"} | ` +
+      `${sReg ? sReg.p50.toFixed(0) : "—"} | ${sPcv ? sPcv.p50.toFixed(2) : "—"} |`,
   );
 }
 
@@ -166,10 +171,10 @@ L.push("## Итог по всем дням");
 L.push("");
 L.push(`- Практика: ${days.size} дн., ~${totalMin.toFixed(0)} мин, ${days.size ? (totalMin / days.size).toFixed(0) : 0} мин/день`);
 if (sRate) {
-  L.push(`- Частота: медиана **${sRate.p50.toFixed(2)} Hz** (p25–p75: ${sRate.p25.toFixed(2)}–${sRate.p75.toFixed(2)}) — цель 5.5 Hz`);
+  L.push(`- Частота: медиана **${sRate.p50.toFixed(2)} Hz**, диапазон ${sRate.min.toFixed(2)}–${sRate.max.toFixed(2)} (p25–p75: ${sRate.p25.toFixed(2)}–${sRate.p75.toFixed(2)}, p90: ${sRate.p90.toFixed(2)}) — цель 5.5 Hz`);
 }
 if (sExt) {
-  L.push(`- Размах: медиана **${sExt.p50.toFixed(0)} ¢** (p25–p75: ${sExt.p25.toFixed(0)}–${sExt.p75.toFixed(0)}) — рабочая зона 130–190 ¢`);
+  L.push(`- Размах: медиана **${sExt.p50.toFixed(0)} ¢**, диапазон ${sExt.min.toFixed(0)}–${sExt.max.toFixed(0)} — рабочая зона 130–190 ¢`);
 }
 if (sReg) {
   L.push(`- Регулярность: медиана ${sReg.p50.toFixed(0)} % (цель ≥ 60 %)`);
@@ -178,17 +183,21 @@ if (sPcv) {
   L.push(`- Стабильность темпа: медиана periodCV ${sPcv.p50.toFixed(2)} (цель ≤ 0.10; Makenai 0.07, M. Shadows 0.13–0.16)`);
 }
 
-// trend: first vs last day medians
+// trend: first vs last day — median AND sustained top (p90, robust to a
+// single lucky row: 10 % of the day's voiced snapshots must reach it)
 const dayKeys = [...days.keys()].sort();
 if (dayKeys.length >= 2) {
   const first = stats(days.get(dayKeys[0]).rate);
   const last = stats(days.get(dayKeys[dayKeys.length - 1]).rate);
   if (first && last) {
-    const delta = last.p50 - first.p50;
+    const dMed = last.p50 - first.p50;
+    const dTop = last.p90 - first.p90;
     L.push("");
     L.push(`## Тренд`);
     L.push("");
-    L.push(`- Rate p50: ${dayKeys[0]} → ${dayKeys[dayKeys.length - 1]}: **${first.p50.toFixed(2)} → ${last.p50.toFixed(2)} Hz** (${delta >= 0 ? "+" : ""}${delta.toFixed(2)})`);
+    L.push(`- Rate p50: ${dayKeys[0]} → ${dayKeys[dayKeys.length - 1]}: **${first.p50.toFixed(2)} → ${last.p50.toFixed(2)} Hz** (${dMed >= 0 ? "+" : ""}${dMed.toFixed(2)})`);
+    L.push(`- Устойчивый верх (p90): **${first.p90.toFixed(2)} → ${last.p90.toFixed(2)} Hz** (${dTop >= 0 ? "+" : ""}${dTop.toFixed(2)}) — по нему видно рост лестницы`);
+    L.push(`- Вершина дня: ${first.max.toFixed(2)} → ${last.max.toFixed(2)} Hz`);
   }
 }
 
