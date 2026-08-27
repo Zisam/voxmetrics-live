@@ -95,10 +95,11 @@ describe("createMetronome (lookahead scheduler)", () => {
 
     // accent pattern: accent at beats 0, 4, ...
     expect(clicks[0]!.freq).toBe(1568);
-    expect(clicks[0]!.gain).toBeCloseTo(0.5);
+    // accent/soft gains and the square timbre (brighter than sine)
+    expect(clicks[0]!.gain).toBeCloseTo(0.35);
     for (const c of clicks.slice(1, 4)) {
       expect(c.freq).toBe(1046.5);
-      expect(c.gain).toBeCloseTo(0.3);
+      expect(c.gain).toBeCloseTo(0.2);
     }
     expect(clicks[4]!.freq).toBe(1568);
 

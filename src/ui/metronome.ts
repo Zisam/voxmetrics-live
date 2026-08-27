@@ -46,13 +46,13 @@ export function createMetronome(ctx: AudioContext): Metronome {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.frequency.value = accent ? ACCENT_HZ : BEAT_HZ;
-    osc.type = "sine";
-    gain.gain.setValueAtTime(accent ? 0.5 : 0.3, at);
-    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.05);
+    osc.type = "square";
+    gain.gain.setValueAtTime(accent ? 0.35 : 0.2, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.045);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(at);
-    osc.stop(at + 0.06);
+    osc.stop(at + 0.05);
   }
 
   /**
