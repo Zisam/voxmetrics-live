@@ -208,6 +208,9 @@ function drawLtas(canvas: HTMLCanvasElement, ltas: LtasSnapshot): boolean {
 export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
   const d = t();
   root.innerHTML = `
+    <div class="sheet-handle" id="sheet-handle" role="separator" aria-orientation="horizontal" aria-label="${d.sheetResize}">
+      <span class="sheet-grip"></span>
+    </div>
     <div class="mlegend">
       <span class="mchip q-good">${d.legendGood}</span>
       <span class="mchip q-ok">${d.legendOk}</span>
@@ -355,7 +358,7 @@ export function createMetricsPanel(root: HTMLElement): MetricsPanelHandle {
         </span>
       </div>
     </section>
-    <section class="mcard">
+    <section class="mcard mcard-ltas">
       <h2>${d.cardLtas}</h2>
       <canvas class="mltas" id="mv-ltas"></canvas>
       <p class="mhint" id="mv-ltas-hint">${d.ltasHint}</p>

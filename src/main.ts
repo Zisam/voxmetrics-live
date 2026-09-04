@@ -60,34 +60,37 @@ function toolbarHtml(d: ReturnType<typeof t>): string {
     <div class="toolbar-left">
       <h1>voxmetrics live</h1>
       <button id="toggle" type="button">${d.startBtn}</button>
-      <select id="channel" class="channel-select">
-        <option value="center">${d.channelCenter}</option>
-        <option value="left">${d.channelLeft}</option>
-        <option value="right">${d.channelRight}</option>
-      </select>
-      <label class="gate-control">
-        <span class="gate-label" id="gate-label">${d.gateLabel}</span>
-        <input type="range" id="gate" min="-90" max="-20" step="1" value="-50" />
-        <span class="gate-value" id="gate-value">-50 ${d.dbUnit}</span>
-      </label>
       <button id="guide-btn" type="button" class="guide-btn">${d.guideBtn}</button>
-      <button id="vib-guide-btn" type="button" class="vib-guide-btn">${d.refBtn}</button>
       <button id="metronome-btn" type="button" class="vib-guide-btn">${d.metronomeBtn}</button>
       <label class="gate-control">
         <span class="gate-label" id="tempo-label">${d.tempoLabel}</span>
         <input type="range" id="bpm" min="55" max="95" step="1" value="83" />
         <span class="gate-value" id="bpm-value">83 BPM · 5.5 ${d.hzUnit}</span>
       </label>
-      <label class="gate-control">
-        <span class="gate-label" id="shift-label">${d.shiftLabel}</span>
-        <input type="range" id="latency" min="0" max="300" step="5" value="120" />
-        <span class="gate-value" id="latency-value">120 ${d.msUnit}</span>
-      </label>
       <select id="locale" class="channel-select" title="Language / 言語">
         ${LOCALES.map((l) => `<option value="${l}">${LOCALE_LABELS[l]}</option>`).join("")}
       </select>
-      <span id="status" class="status">${d.statusReady}</span>
-      <span class="privacy" id="privacy">${d.privacy}</span>
+      <button id="toolbar-more-btn" type="button" class="toolbar-toggle" title="${d.moreBtn}" aria-label="${d.moreBtn}" aria-expanded="false">⋯</button>
+      <div class="toolbar-extra" id="toolbar-extra">
+        <select id="channel" class="channel-select">
+          <option value="center">${d.channelCenter}</option>
+          <option value="left">${d.channelLeft}</option>
+          <option value="right">${d.channelRight}</option>
+        </select>
+        <label class="gate-control">
+          <span class="gate-label" id="gate-label">${d.gateLabel}</span>
+          <input type="range" id="gate" min="-90" max="-20" step="1" value="-50" />
+          <span class="gate-value" id="gate-value">-50 ${d.dbUnit}</span>
+        </label>
+        <button id="vib-guide-btn" type="button" class="vib-guide-btn">${d.refBtn}</button>
+        <label class="gate-control">
+          <span class="gate-label" id="shift-label">${d.shiftLabel}</span>
+          <input type="range" id="latency" min="0" max="300" step="5" value="120" />
+          <span class="gate-value" id="latency-value">120 ${d.msUnit}</span>
+        </label>
+        <span id="status" class="status">${d.statusReady}</span>
+        <span class="privacy" id="privacy">${d.privacy}</span>
+      </div>
     </div>
     <div class="hud" id="hud">
       <span class="hud-note" id="current-note">—</span>
@@ -123,6 +126,84 @@ const pitchChartEl = document.querySelector<HTMLDivElement>("#pitch-chart")!;
 const pitchViewEl = document.querySelector<HTMLElement>(".pitch-view")!;
 const metricsPanelEl = document.querySelector<HTMLElement>("#metrics-panel")!;
 let metricsPanel = createMetricsPanel(metricsPanelEl);
+const toolbarEl = document.querySelector<HTMLElement>(".toolbar")!;
+const moreBtnEl =
+  document.querySelector<HTMLButtonElement>("#toolbar-more-btn")!;
+
+function setToolbarExpanded(expanded: boolean, persist = true): void {
+  toolbarEl.classList.toggle("expanded", expanded);
+  moreBtnEl.setAttribute("aria-expanded", String(expanded));
+  if (persist) {
+    localStorage.setItem("voxmetrics.toolbar", expanded ? "1" : "0");
+  }
+}
+
+if (localStorage.getItem("voxmetrics.toolbar") === "1") setToolbarExpanded(true);
+
+moreBtnEl.addEventListener("click", () => {
+  setToolbarExpanded(!toolbarEl.classList.contains("expanded"));
+});
+
+const SHEET_MIN_H = 56;
+const footerEl = document.querySelector<HTMLElement>(".footer")!;
+
+function footerH(): number {
+  return footerEl.offsetHeight || 33;
+}
+
+function clampSheetH(h: number): number {
+  const maxH = Math.max(SHEET_MIN_H, window.innerHeight - footerH() - 64);
+  return Math.min(maxH, Math.max(SHEET_MIN_H, Math.round(h)));
+}
+
+function applySheetH(h: number): void {
+  metricsPanelEl.style.setProperty("--sheet-h", `${clampSheetH(h)}px`);
+}
+
+function bindSheetHandle(): void {
+  const handle = metricsPanelEl.querySelector<HTMLElement>("#sheet-handle");
+  if (!handle) return;
+  handle.setAttribute("aria-label", t().sheetResize);
+  let startY = 0;
+  let startH = 0;
+  let dragging = false;
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    metricsPanelEl.classList.remove("dragging");
+    localStorage.setItem(
+      "voxmetrics.sheetH",
+      String(metricsPanelEl.getBoundingClientRect().height),
+    );
+  };
+  handle.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    startY = e.clientY;
+    startH = metricsPanelEl.getBoundingClientRect().height;
+    metricsPanelEl.classList.add("dragging");
+    handle.setPointerCapture(e.pointerId);
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    applySheetH(startH + (startY - e.clientY));
+  });
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+}
+
+const savedSheetH = Number.parseFloat(
+  localStorage.getItem("voxmetrics.sheetH") ?? "",
+);
+if (Number.isFinite(savedSheetH)) applySheetH(savedSheetH);
+bindSheetHandle();
+
+function syncSheetToViewport(): void {
+  metricsPanelEl.style.setProperty("--sheet-bottom", `${footerH()}px`);
+  applySheetH(metricsPanelEl.getBoundingClientRect().height);
+}
+
+syncSheetToViewport();
+window.addEventListener("resize", syncSheetToViewport);
 const coachBannerEl = document.querySelector<HTMLElement>("#coach-banner")!;
 const guideEl = document.querySelector<HTMLElement>("#guide")!;
 const guideBtnEl = document.querySelector<HTMLButtonElement>("#guide-btn")!;
@@ -165,6 +246,8 @@ function applyLocale(locale: Locale): void {
   gateLabelEl.textContent = d.gateLabel;
   tempoLabelEl.textContent = d.tempoLabel;
   shiftLabelEl.textContent = d.shiftLabel;
+  moreBtnEl.title = d.moreBtn;
+  moreBtnEl.setAttribute("aria-label", d.moreBtn);
   refBtnEl.textContent = d.refBtn;
   metronomeBtnEl.textContent = d.metronomeBtn;
   guideBtnEl.textContent = d.guideBtn;
@@ -174,6 +257,7 @@ function applyLocale(locale: Locale): void {
   applyLatency();
 
   metricsPanel = createMetricsPanel(metricsPanelEl);
+  bindSheetHandle();
   renderGuide(guideEl);
   bindGuideClose();
   hideCoachBanner();
@@ -184,9 +268,14 @@ localeSelectEl.addEventListener("change", (e) => {
   applyLocale((e.target as HTMLSelectElement).value as Locale);
 });
 
+function setStatusRevealed(text: string): void {
+  statusEl.textContent = text;
+  if (!toolbarEl.classList.contains("expanded")) setToolbarExpanded(true, false);
+}
+
 function downloadTsv(): void {
   if (sessionLog.size() === 0) {
-    statusEl.textContent = t().noMetricsYet;
+    setStatusRevealed(t().noMetricsYet);
     return;
   }
   const blob = new Blob([sessionLog.toTsv()], {
@@ -276,7 +365,7 @@ function applyMetronomeState(): void {
 
 metronomeBtnEl.addEventListener("click", () => {
   if (!audioCtx || audioCtx.state === "closed") {
-    statusEl.textContent = t().startMetronomeFirst;
+    setStatusRevealed(t().startMetronomeFirst);
     return;
   }
   if (!metronome) metronome = createMetronome(audioCtx);
@@ -643,7 +732,7 @@ function handleWorkerOut(msg: WorkerOutMessage): void {
     const ltas: LtasSnapshot = { freqs: msg.freqs, db: msg.db };
     metricsPanel.updateLtas(ltas);
   }
-  if (msg.type === "error") statusEl.textContent = `Ошибка: ${msg.message}`;
+  if (msg.type === "error") setStatusRevealed(`Ошибка: ${msg.message}`);
 }
 
 for (const worker of [dspWorker, analyserWorker]) {
@@ -651,7 +740,9 @@ for (const worker of [dspWorker, analyserWorker]) {
     handleWorkerOut(ev.data);
   };
   worker.onerror = (ev) => {
-    statusEl.textContent = `Ошибка worker: ${ev.message || "неизвестная ошибка"}`;
+    setStatusRevealed(
+      `Ошибка worker: ${ev.message || "неизвестная ошибка"}`,
+    );
     stop();
   };
 }
@@ -769,8 +860,7 @@ toggleBtn.addEventListener("click", async () => {
   try {
     await start();
   } catch (err) {
-    statusEl.textContent =
-      err instanceof Error ? err.message : t().micError;
+    setStatusRevealed(err instanceof Error ? err.message : t().micError);
   }
 });
 
