@@ -18,6 +18,8 @@ import {
   tickWallScroll,
   Y_PAN_MAX_SEMITONE,
   Y_PAN_MIN_SEMITONE,
+  Y_ZOOM_MIN_SPAN_SEMITONES,
+  zoomYRange,
 } from "../src/ui/pitch-buffer.ts";
 
 function point(
@@ -211,6 +213,44 @@ describe("panYRange", () => {
   it("returns the input range for zero-height plots and zero drags", () => {
     expect(panYRange([57, 69], 80, 0)).toEqual([57, 69]);
     expect(panYRange([57, 69], 0, 200)).toEqual([57, 69]);
+  });
+});
+
+describe("zoomYRange", () => {
+  it("zooms in around the midpoint anchor when fingers spread", () => {
+    expect(zoomYRange([40, 60], 2, 0.5)).toEqual([45, 55]);
+  });
+
+  it("zooms out around the midpoint anchor when fingers close in", () => {
+    expect(zoomYRange([50, 60], 0.5, 0.5)).toEqual([45, 65]);
+  });
+
+  it("keeps the value under the anchor fixed at the top edge", () => {
+    expect(zoomYRange([40, 60], 2, 0)).toEqual([50, 60]);
+  });
+
+  it("keeps the value under the anchor fixed at the bottom edge", () => {
+    expect(zoomYRange([40, 60], 2, 1)).toEqual([40, 50]);
+  });
+
+  it("clamps the span to the minimum zoom span", () => {
+    expect(zoomYRange([60, 64], 10, 0.5)).toEqual([
+      62 - Y_ZOOM_MIN_SPAN_SEMITONES / 2,
+      62 + Y_ZOOM_MIN_SPAN_SEMITONES / 2,
+    ]);
+  });
+
+  it("clamps zoomed-out ranges to the pan bounds", () => {
+    expect(zoomYRange([100, 110], 0.01, 0.5)).toEqual([
+      Y_PAN_MIN_SEMITONE,
+      Y_PAN_MAX_SEMITONE,
+    ]);
+  });
+
+  it("returns the input range for degenerate factors", () => {
+    expect(zoomYRange([57, 69], 0, 0.5)).toEqual([57, 69]);
+    expect(zoomYRange([57, 69], Number.NaN, 0.5)).toEqual([57, 69]);
+    expect(zoomYRange([57, 69], 1, 0.5)).toEqual([57, 69]);
   });
 });
 

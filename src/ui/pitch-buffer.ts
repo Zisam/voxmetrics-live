@@ -18,6 +18,9 @@ export const DEFAULT_Y_RANGE: [number, number] = [57, 69];
 export const Y_PAN_MIN_SEMITONE = 12;
 export const Y_PAN_MAX_SEMITONE = 119;
 
+/** Narrowest Y span reachable with pinch zoom (semitones). */
+export const Y_ZOOM_MIN_SPAN_SEMITONES = 5;
+
 /**
  * Shift the Y view by a finger drag. Content follows the finger: dyPx > 0
  * (finger moved down) reveals higher notes. The result is clamped to
@@ -37,6 +40,36 @@ export function panYRange(
     Math.max(Y_PAN_MIN_SEMITONE, lo),
   );
   return [clamped, clamped + span];
+}
+
+/**
+ * Zoom the Y view by a pinch. `factor` is the finger-spread ratio:
+ * >1 (fingers apart) zooms in (span shrinks), <1 zooms out. The value
+ * under the fingers' midpoint stays fixed: `anchorFromTop` is the
+ * midpoint's position within the plot (0 = top edge, 1 = bottom edge).
+ * The span is clamped to [Y_ZOOM_MIN_SPAN_SEMITONES, pan bounds] and
+ * the result is clamped to [Y_PAN_MIN_SEMITONE, Y_PAN_MAX_SEMITONE].
+ */
+export function zoomYRange(
+  range: readonly [number, number],
+  factor: number,
+  anchorFromTop = 0.5,
+  minSpan = Y_ZOOM_MIN_SPAN_SEMITONES,
+  maxSpan = Y_PAN_MAX_SEMITONE - Y_PAN_MIN_SEMITONE,
+): [number, number] {
+  const [min, max] = range;
+  const span = max - min;
+  if (!(factor > 0) || !Number.isFinite(factor) || factor === 1) {
+    return [min, max];
+  }
+  const anchor = max - anchorFromTop * span;
+  const newSpan = Math.min(maxSpan, Math.max(minSpan, span / factor));
+  const lo = anchor - (1 - anchorFromTop) * newSpan;
+  const clamped = Math.min(
+    Y_PAN_MAX_SEMITONE - newSpan,
+    Math.max(Y_PAN_MIN_SEMITONE, lo),
+  );
+  return [clamped, clamped + newSpan];
 }
 
 export interface HudState {

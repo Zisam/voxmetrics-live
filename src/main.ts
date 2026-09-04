@@ -18,6 +18,7 @@ import {
   resetScrollState,
   resolveHudPoint,
   tickWallScroll,
+  zoomYRange,
 } from "./ui/pitch-buffer.ts";
 import {
   acceptWorkerStreamMessage,
@@ -708,45 +709,109 @@ function scheduleYAutoResume(): void {
   }, TOUCH_Y_RESUME_MS);
 }
 
-/** Touch drag pans the Y view (vertical scroll of the live chart). */
-function bindChartTouchPan(): void {
+/** Touch drag pans the Y view; a two-finger pinch zooms it. */
+function bindChartTouchGestures(): void {
   const PAN_SLOP_PX = 6;
-  let activePointerId: number | null = null;
-  let startY = 0;
-  let startRange: [number, number] | null = null;
+  const touches = new Map<number, { x: number; y: number }>();
+  let panPointerId: number | null = null;
+  let panStartY = 0;
+  let panStartRange: [number, number] | null = null;
+  let pinchStartRange: [number, number] | null = null;
+  let pinchStartDist = 0;
 
-  const end = (e: PointerEvent) => {
-    if (e.pointerId !== activePointerId) return;
-    activePointerId = null;
-    startRange = null;
-    scheduleYAutoResume();
+  const currentYRange = (): [number, number] => {
+    const s = pitchPlot.scales.y;
+    return [s.min ?? DEFAULT_Y_RANGE[0], s.max ?? DEFAULT_Y_RANGE[1]];
+  };
+
+  const pinchDist = (): number => {
+    const [a, b] = [...touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+
+  const startPan = (pointerId: number): void => {
+    panPointerId = pointerId;
+    panStartY = touches.get(pointerId)!.y;
+    panStartRange = currentYRange();
+  };
+
+  const startPinch = (): void => {
+    panPointerId = null;
+    panStartRange = null;
+    pinchStartRange = currentYRange();
+    pinchStartDist = pinchDist();
   };
 
   pitchViewEl.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "touch" || activePointerId != null) return;
-    activePointerId = e.pointerId;
-    startY = e.clientY;
-    const s = pitchPlot.scales.y;
-    startRange = [s.min ?? DEFAULT_Y_RANGE[0], s.max ?? DEFAULT_Y_RANGE[1]];
+    if (e.pointerType !== "touch") return;
     clearTouchResumeTimer();
     pitchViewEl.setPointerCapture(e.pointerId);
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) startPinch();
+    else if (touches.size === 1) startPan(e.pointerId);
   });
 
   pitchViewEl.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== activePointerId || startRange == null) return;
-    const dy = e.clientY - startY;
-    if (Math.abs(dy) <= PAN_SLOP_PX && manualY == null) return;
-    // uPlot bbox is in canvas px; dy is in CSS px — match the units
-    const plotCssH = pitchPlot.bbox.height / (window.devicePixelRatio || 1);
-    manualY = panYRange(startRange, dy, plotCssH);
-    pitchPlot.setData([pitchX, pitchMidi]);
+    const t = touches.get(e.pointerId);
+    if (!t) return;
+    t.x = e.clientX;
+    t.y = e.clientY;
+
+    if (pinchStartRange != null && touches.size >= 2) {
+      if (pinchStartDist > 0) {
+        // .u-over is positioned exactly over the plot area in CSS px
+        const rect = pitchPlot.over.getBoundingClientRect();
+        const [a, b] = [...touches.values()];
+        const midY = (a.y + b.y) / 2;
+        const anchorFromTop =
+          rect.height > 0
+            ? Math.min(1, Math.max(0, (midY - rect.top) / rect.height))
+            : 0.5;
+        manualY = zoomYRange(
+          pinchStartRange,
+          pinchDist() / pinchStartDist,
+          anchorFromTop,
+        );
+        pitchPlot.setData([pitchX, pitchMidi]);
+      }
+      return;
+    }
+
+    if (e.pointerId === panPointerId && panStartRange != null) {
+      const dy = t.y - panStartY;
+      if (Math.abs(dy) <= PAN_SLOP_PX && manualY == null) return;
+      // uPlot bbox is in canvas px; dy is in CSS px — match the units
+      const plotCssH = pitchPlot.bbox.height / (window.devicePixelRatio || 1);
+      manualY = panYRange(panStartRange, dy, plotCssH);
+      pitchPlot.setData([pitchX, pitchMidi]);
+    }
   });
+
+  const end = (e: PointerEvent) => {
+    if (!touches.delete(e.pointerId)) return;
+    if (touches.size >= 2) {
+      // re-base the pinch on the remaining pair of fingers
+      startPinch();
+    } else if (touches.size === 1) {
+      // pinch → pan handoff with the remaining finger
+      pinchStartRange = null;
+      const [id] = touches.keys();
+      startPan(id);
+    } else {
+      panPointerId = null;
+      panStartRange = null;
+      pinchStartRange = null;
+      scheduleYAutoResume();
+    }
+  };
 
   pitchViewEl.addEventListener("pointerup", end);
   pitchViewEl.addEventListener("pointercancel", end);
+  // safety net if a captured pointer is dropped without up/cancel
+  pitchViewEl.addEventListener("lostpointercapture", end);
 }
 
-bindChartTouchPan();
+bindChartTouchGestures();
 
 function clearChart(): void {
   stopChartLoop();
