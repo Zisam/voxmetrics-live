@@ -28,7 +28,6 @@ body {
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
   padding: 0.65rem 1rem;
   background: #12141a;
@@ -140,19 +139,29 @@ button:hover {
   font-size: 0.78rem;
 }
 
+/* Tuner HUD: overlay in the chart's top-right corner. It is plain DOM over
+ * the canvas, so chart redraws (scroll/zoom) never move or hide it, and
+ * pointer-events: none keeps touch panning working through it. */
 .hud {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 4;
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  padding: 0.3rem 0.6rem;
+  border-radius: 10px;
+  background: rgba(13, 15, 20, 0.55);
   font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
+  line-height: 1.25;
+  pointer-events: none;
 }
 
 .hud-note {
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  min-width: 3.5rem;
-  text-align: right;
 }
 
 .hud-cents {
@@ -717,10 +726,20 @@ button:hover {
   }
 
   .hud {
-    margin-left: auto;
+    top: 0.35rem;
+    right: 0.5rem;
+    padding: 0.2rem 0.5rem;
   }
 
   .hud-note {
-    font-size: 1.35rem;
+    font-size: 1.2rem;
+  }
+
+  .hud-cents {
+    font-size: 0.85rem;
+  }
+
+  .hud-hz {
+    font-size: 0.72rem;
   }
 }

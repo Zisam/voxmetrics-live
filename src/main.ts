@@ -94,16 +94,16 @@ function toolbarHtml(d: ReturnType<typeof t>): string {
         <span class="privacy" id="privacy">${d.privacy}</span>
       </div>
     </div>
-    <div class="hud" id="hud">
-      <span class="hud-note" id="current-note">—</span>
-      <span class="hud-cents" id="current-cents"></span>
-      <span class="hud-hz" id="current-hz"></span>
-    </div>
   </header>
   <main class="stage">
     <div class="pitch-view">
       <div id="pitch-chart"></div>
       <div class="coach-banner" id="coach-banner"></div>
+      <div class="hud" id="hud">
+        <span class="hud-note" id="current-note">—</span>
+        <span class="hud-cents" id="current-cents"></span>
+        <span class="hud-hz" id="current-hz"></span>
+      </div>
     </div>
     <aside class="metrics-panel" id="metrics-panel"></aside>
   </main>
