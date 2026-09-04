@@ -36,6 +36,7 @@ import {
   visibleVoicedMedian,
 } from "./ui/vibrato-guide.ts";
 import { SessionLog, tsvFilename } from "./ui/session-log.ts";
+import { metrikaGoal, metrikaParams } from "./ui/metrika.ts";
 import { createMetronome, type Metronome } from "./ui/metronome.ts";
 import {
   createFrameScheduler,
@@ -268,7 +269,9 @@ function applyLocale(locale: Locale): void {
 }
 
 localeSelectEl.addEventListener("change", (e) => {
-  applyLocale((e.target as HTMLSelectElement).value as Locale);
+  const locale = (e.target as HTMLSelectElement).value as Locale;
+  applyLocale(locale);
+  metrikaParams({ locale });
 });
 
 function setStatusRevealed(text: string): void {
@@ -294,6 +297,7 @@ function downloadTsv(): void {
   // revoke late: Safari/Firefox process the download async and abort on
   // immediate revocation
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  metrikaGoal("tsv-export");
   statusEl.textContent = fmt(t().downloadedRows, { n: sessionLog.size() });
 }
 
@@ -375,7 +379,9 @@ metronomeBtnEl.addEventListener("click", () => {
   if (metronome.isOn()) {
     metronome.stop();
   } else {
-    metronome.start(Number.parseInt(bpmSliderEl.value, 10));
+    const bpm = Number.parseInt(bpmSliderEl.value, 10);
+    metronome.start(bpm);
+    metrikaGoal("metronome-on", { bpm });
   }
   applyMetronomeState();
 });
@@ -952,6 +958,7 @@ async function start(): Promise<void> {
       silent.connect(audioCtx.destination);
 
       active = true;
+      metrikaGoal("session-start");
       startChartLoop();
       stream.getAudioTracks()[0]?.addEventListener("ended", () => stop());
       toggleBtn.textContent = t().stopBtn;
