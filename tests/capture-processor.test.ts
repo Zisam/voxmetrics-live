@@ -57,15 +57,14 @@ describe("capture-processor worklet", () => {
     expect(reg.name).toBe("capture-processor");
   });
 
-  it("captures the right channel by default on stereo input", async () => {
+  it("downmixes stereo input (L+R)/2 by default (C)", async () => {
     const reg = await loadWorklet();
     const proc = newInstance(reg);
-    const left = new Float32Array(1024).fill(-1);
-    const right = new Float32Array(1024);
-    for (let i = 0; i < right.length; i++) right[i] = i;
+    const left = new Float32Array(1024).fill(2);
+    const right = new Float32Array(1024).fill(4);
     proc.process([[left, right]]);
     expect(posted.length).toBe(1);
-    expect(Array.from(posted[0]!)).toEqual(Array.from(right));
+    expect(posted[0]!.every((v) => v === 3)).toBe(true);
   });
 
   it("switches to the left channel via port message", async () => {
@@ -81,9 +80,54 @@ describe("capture-processor worklet", () => {
     expect(posted[0]!.every((v) => v === 7)).toBe(true);
   });
 
+  it("switches to the right channel via port message", async () => {
+    const reg = await loadWorklet();
+    const proc = newInstance(reg);
+    (proc.port.onmessage as (e: unknown) => void)({
+      data: { type: "channel", value: "right" },
+    });
+    const left = new Float32Array(1024).fill(7);
+    const right = new Float32Array(1024).fill(9);
+    proc.process([[left, right]]);
+    expect(posted.length).toBe(1);
+    expect(posted[0]!.every((v) => v === 9)).toBe(true);
+  });
+
+  it("falls back to downmix on an unknown channel value", async () => {
+    const reg = await loadWorklet();
+    const proc = newInstance(reg);
+    (proc.port.onmessage as (e: unknown) => void)({
+      data: { type: "channel", value: "garbage" },
+    });
+    const left = new Float32Array(1024).fill(2);
+    const right = new Float32Array(1024).fill(4);
+    proc.process([[left, right]]);
+    expect(posted.length).toBe(1);
+    expect(posted[0]!.every((v) => v === 3)).toBe(true);
+  });
+
+  it("switches back to center after picking a side", async () => {
+    const reg = await loadWorklet();
+    const proc = newInstance(reg);
+    const send = (value: string) =>
+      (proc.port.onmessage as (e: unknown) => void)({
+        data: { type: "channel", value },
+      });
+    send("left");
+    send("center");
+    const left = new Float32Array(1024).fill(2);
+    const right = new Float32Array(1024).fill(4);
+    proc.process([[left, right]]);
+    expect(posted.length).toBe(1);
+    expect(posted[0]!.every((v) => v === 3)).toBe(true);
+  });
+
   it("falls back to the single channel on mono input", async () => {
     const reg = await loadWorklet();
     const proc = newInstance(reg);
+    (proc.port.onmessage as (e: unknown) => void)({
+      data: { type: "channel", value: "right" },
+    });
     const mono = new Float32Array(1024).fill(3);
     proc.process([[mono]]);
     expect(posted.length).toBe(1);

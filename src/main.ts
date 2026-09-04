@@ -61,8 +61,9 @@ function toolbarHtml(d: ReturnType<typeof t>): string {
       <h1>voxmetrics live</h1>
       <button id="toggle" type="button">${d.startBtn}</button>
       <select id="channel" class="channel-select">
-        <option value="right">${d.channelMic}</option>
-        <option value="left">${d.channelGuitar}</option>
+        <option value="center">${d.channelCenter}</option>
+        <option value="left">${d.channelLeft}</option>
+        <option value="right">${d.channelRight}</option>
       </select>
       <label class="gate-control">
         <span class="gate-label" id="gate-label">${d.gateLabel}</span>
@@ -157,8 +158,9 @@ function applyLocale(locale: Locale): void {
   privacyEl.textContent = d.privacy;
 
   const channelOpts = channelSelectEl.options;
-  channelOpts[0]!.textContent = d.channelMic;
-  channelOpts[1]!.textContent = d.channelGuitar;
+  channelOpts[0]!.textContent = d.channelCenter;
+  channelOpts[1]!.textContent = d.channelLeft;
+  channelOpts[2]!.textContent = d.channelRight;
 
   gateLabelEl.textContent = d.gateLabel;
   tempoLabelEl.textContent = d.tempoLabel;
@@ -376,18 +378,20 @@ let starting = false;
 let notch: ((x: Float32Array) => Float32Array) | null = null;
 let gate: NoiseGate | null = null;
 
-type Channel = "left" | "right";
+type Channel = "left" | "right" | "center";
+
+function normalizeChannel(v: string | null): Channel {
+  return v === "left" || v === "right" || v === "center" ? v : "center";
+}
 
 function storedChannel(): Channel {
-  return localStorage.getItem("voxmetrics.channel") === "left"
-    ? "left"
-    : "right";
+  return normalizeChannel(localStorage.getItem("voxmetrics.channel"));
 }
 
 channelSelectEl.value = storedChannel();
 
 function applyChannelSelection(): void {
-  const value = channelSelectEl.value === "left" ? "left" : "right";
+  const value = normalizeChannel(channelSelectEl.value);
   localStorage.setItem("voxmetrics.channel", value);
   captureNode?.port.postMessage({ type: "channel", value });
 }

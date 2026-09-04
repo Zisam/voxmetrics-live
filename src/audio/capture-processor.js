@@ -10,10 +10,11 @@ class CaptureProcessor extends AudioWorkletProcessor {
     super();
     this.buf = new Float32Array(CHUNK_SAMPLES);
     this.pos = 0;
-    this.channel = "right";
+    this.channel = "center";
     this.port.onmessage = (e) => {
       if (e.data && e.data.type === "channel") {
-        this.channel = e.data.value === "left" ? "left" : "right";
+        const v = e.data.value;
+        this.channel = v === "left" || v === "right" ? v : "center";
       }
     };
   }
@@ -21,23 +22,37 @@ class CaptureProcessor extends AudioWorkletProcessor {
   process(inputs) {
     const channels = inputs[0];
     if (!channels || channels.length === 0) return true;
-    // stereo: right channel by default (mic); mono devices fall back to [0]
-    const input =
-      this.channel === "right" && channels.length > 1
-        ? channels[1]
-        : channels[0];
+    if (channels.length > 1) {
+      // stereo: C = downmix (L+R)/2 (default), L or R picks a side
+      const a = channels[0];
+      const b = channels[1];
+      for (let i = 0; i < a.length; i++) {
+        const v =
+          this.channel === "center"
+            ? (a[i] + b[i]) * 0.5
+            : this.channel === "right"
+              ? b[i]
+              : a[i];
+        this.write(v);
+      }
+      return true;
+    }
+    // mono devices fall back to [0]
+    const input = channels[0];
     if (!input || input.length === 0) return true;
 
-    for (let i = 0; i < input.length; i++) {
-      this.buf[this.pos++] = input[i];
-      if (this.pos >= CHUNK_SAMPLES) {
-        const chunk = this.buf.slice();
-        this.port.postMessage(chunk, [chunk.buffer]);
-        this.buf = new Float32Array(CHUNK_SAMPLES);
-        this.pos = 0;
-      }
-    }
+    for (let i = 0; i < input.length; i++) this.write(input[i]);
     return true;
+  }
+
+  write(v) {
+    this.buf[this.pos++] = v;
+    if (this.pos >= CHUNK_SAMPLES) {
+      const chunk = this.buf.slice();
+      this.port.postMessage(chunk, [chunk.buffer]);
+      this.buf = new Float32Array(CHUNK_SAMPLES);
+      this.pos = 0;
+    }
   }
 }
 
