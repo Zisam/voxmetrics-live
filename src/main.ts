@@ -6,6 +6,8 @@ import { midiToNoteLabel } from "./dsp/math.ts";
 import { createNotch } from "./dsp/notch.ts";
 import { createGate, type NoiseGate } from "./dsp/gate.ts";
 import {
+  DEFAULT_Y_RANGE,
+  panYRange,
   appendScrollingPitchPoints,
   clearPitchSeries,
   computeYRange,
@@ -511,6 +513,11 @@ let pendingF0Batches: F0Point[][] = [];
 let pendingHud: F0Point | null | undefined;
 let chartLoopActive = false;
 
+/** Manual Y view set by touch panning; null = auto-follow the voice. */
+let manualY: [number, number] | null = null;
+let touchResumeTimer: ReturnType<typeof setTimeout> | null = null;
+const TOUCH_Y_RESUME_MS = 4000;
+
 function renderChartFrame(): void {
   const wallSec = performance.now() / 1000;
   tickWallScroll(scrollState, pitchX, pitchMidi, wallSec);
@@ -635,6 +642,7 @@ const pitchPlot = new uPlot(
       x: { time: false, range: pitchXRange() },
       y: {
         range: (_u, _min, _max) =>
+          manualY ??
           yRangeWithHysteresis(computeYRange(pitchMidi), performance.now()),
       },
     },
@@ -682,10 +690,70 @@ function applyHud(point: F0Point | null): void {
   currentHzEl.textContent = hud.hz;
 }
 
+function clearTouchResumeTimer(): void {
+  if (touchResumeTimer !== null) {
+    clearTimeout(touchResumeTimer);
+    touchResumeTimer = null;
+  }
+}
+
+/** Fall back to auto-follow shortly after the finger leaves the chart. */
+function scheduleYAutoResume(): void {
+  clearTouchResumeTimer();
+  touchResumeTimer = setTimeout(() => {
+    touchResumeTimer = null;
+    manualY = null;
+    resetYRangeCache();
+    pitchPlot.setData([pitchX, pitchMidi]);
+  }, TOUCH_Y_RESUME_MS);
+}
+
+/** Touch drag pans the Y view (vertical scroll of the live chart). */
+function bindChartTouchPan(): void {
+  const PAN_SLOP_PX = 6;
+  let activePointerId: number | null = null;
+  let startY = 0;
+  let startRange: [number, number] | null = null;
+
+  const end = (e: PointerEvent) => {
+    if (e.pointerId !== activePointerId) return;
+    activePointerId = null;
+    startRange = null;
+    scheduleYAutoResume();
+  };
+
+  pitchViewEl.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch" || activePointerId != null) return;
+    activePointerId = e.pointerId;
+    startY = e.clientY;
+    const s = pitchPlot.scales.y;
+    startRange = [s.min ?? DEFAULT_Y_RANGE[0], s.max ?? DEFAULT_Y_RANGE[1]];
+    clearTouchResumeTimer();
+    pitchViewEl.setPointerCapture(e.pointerId);
+  });
+
+  pitchViewEl.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== activePointerId || startRange == null) return;
+    const dy = e.clientY - startY;
+    if (Math.abs(dy) <= PAN_SLOP_PX && manualY == null) return;
+    // uPlot bbox is in canvas px; dy is in CSS px — match the units
+    const plotCssH = pitchPlot.bbox.height / (window.devicePixelRatio || 1);
+    manualY = panYRange(startRange, dy, plotCssH);
+    pitchPlot.setData([pitchX, pitchMidi]);
+  });
+
+  pitchViewEl.addEventListener("pointerup", end);
+  pitchViewEl.addEventListener("pointercancel", end);
+}
+
+bindChartTouchPan();
+
 function clearChart(): void {
   stopChartLoop();
   resetScrollState(scrollState);
   resetYRangeCache();
+  clearTouchResumeTimer();
+  manualY = null;
   clearPitchSeries(pitchX, pitchMidi);
   pendingF0Batches = [];
   pendingHud = undefined;

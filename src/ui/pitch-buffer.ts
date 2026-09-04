@@ -14,6 +14,31 @@ export const Y_PAD_SEMITONES = 3;
 export const Y_MIN_SPAN_SEMITONES = 14;
 export const DEFAULT_Y_RANGE: [number, number] = [57, 69];
 
+/** Bounds for manual touch panning of the Y view (MIDI semitones). */
+export const Y_PAN_MIN_SEMITONE = 12;
+export const Y_PAN_MAX_SEMITONE = 119;
+
+/**
+ * Shift the Y view by a finger drag. Content follows the finger: dyPx > 0
+ * (finger moved down) reveals higher notes. The result is clamped to
+ * [Y_PAN_MIN_SEMITONE, Y_PAN_MAX_SEMITONE] preserving the visible span.
+ */
+export function panYRange(
+  range: readonly [number, number],
+  dyPx: number,
+  plotHeightPx: number,
+): [number, number] {
+  const [min, max] = range;
+  const span = max - min;
+  if (!(plotHeightPx > 0) || dyPx === 0) return [min, max];
+  const lo = min + (dyPx / plotHeightPx) * span;
+  const clamped = Math.min(
+    Y_PAN_MAX_SEMITONE - span,
+    Math.max(Y_PAN_MIN_SEMITONE, lo),
+  );
+  return [clamped, clamped + span];
+}
+
 export interface HudState {
   note: string;
   cents: string;

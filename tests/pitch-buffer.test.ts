@@ -11,10 +11,13 @@ import {
   hudFromPoint,
   NOW_X,
   nowMarker,
+  panYRange,
   pitchXRange,
   resetScrollState,
   resolveHudPoint,
   tickWallScroll,
+  Y_PAN_MAX_SEMITONE,
+  Y_PAN_MIN_SEMITONE,
 } from "../src/ui/pitch-buffer.ts";
 
 function point(
@@ -182,6 +185,32 @@ describe("pitchXRange", () => {
 describe("computeYRange", () => {
   it("returns fallback for empty series", () => {
     expect(computeYRange([])).toEqual([57, 69]);
+  });
+});
+
+describe("panYRange", () => {
+  it("reveals higher notes when the finger drags down", () => {
+    expect(panYRange([57, 69], 100, 200)).toEqual([63, 75]);
+  });
+
+  it("reveals lower notes when the finger drags up", () => {
+    expect(panYRange([57, 69], -100, 200)).toEqual([51, 63]);
+  });
+
+  it("clamps at the pan bounds preserving the span", () => {
+    expect(panYRange([57, 69], -1000, 200)).toEqual([
+      Y_PAN_MIN_SEMITONE,
+      Y_PAN_MIN_SEMITONE + 12,
+    ]);
+    expect(panYRange([57, 69], 1000, 200)).toEqual([
+      Y_PAN_MAX_SEMITONE - 12,
+      Y_PAN_MAX_SEMITONE,
+    ]);
+  });
+
+  it("returns the input range for zero-height plots and zero drags", () => {
+    expect(panYRange([57, 69], 80, 0)).toEqual([57, 69]);
+    expect(panYRange([57, 69], 0, 200)).toEqual([57, 69]);
   });
 });
 
