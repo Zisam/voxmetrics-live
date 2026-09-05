@@ -522,8 +522,6 @@ let chartLoopActive = false;
 
 /** Manual Y view set by touch panning; null = auto-follow the voice. */
 let manualY: [number, number] | null = null;
-let touchResumeTimer: ReturnType<typeof setTimeout> | null = null;
-const TOUCH_Y_RESUME_MS = 4000;
 
 function renderChartFrame(): void {
   const wallSec = performance.now() / 1000;
@@ -697,33 +695,31 @@ function applyHud(point: F0Point | null): void {
   currentHzEl.textContent = hud.hz;
 }
 
-function clearTouchResumeTimer(): void {
-  if (touchResumeTimer !== null) {
-    clearTimeout(touchResumeTimer);
-    touchResumeTimer = null;
-  }
-}
-
-/** Fall back to auto-follow shortly after the finger leaves the chart. */
-function scheduleYAutoResume(): void {
-  clearTouchResumeTimer();
-  touchResumeTimer = setTimeout(() => {
-    touchResumeTimer = null;
-    manualY = null;
-    resetYRangeCache();
-    pitchPlot.setData([pitchX, pitchMidi]);
-  }, TOUCH_Y_RESUME_MS);
+/** Return the chart to voice auto-follow (double-tap, session restart). */
+function resetManualY(): void {
+  manualY = null;
+  resetYRangeCache();
+  pitchPlot.setData([pitchX, pitchMidi]);
 }
 
 /** Touch drag pans the Y view; a two-finger pinch zooms it. */
 function bindChartTouchGestures(): void {
   const PAN_SLOP_PX = 6;
+  const DOUBLE_TAP_MS = 300;
+  /** A gesture that moved the view less than this doesn't engage manual mode. */
+  const MANUAL_ENGAGE_SEMITONES = 0.5;
   const touches = new Map<number, { x: number; y: number }>();
   let panPointerId: number | null = null;
   let panStartY = 0;
   let panStartRange: [number, number] | null = null;
   let pinchStartRange: [number, number] | null = null;
   let pinchStartDist = 0;
+  let lastTapAt = 0;
+  // per-gesture bookkeeping (first fingerdown → last fingerup)
+  let tapEligible = false;
+  let gestureDownY = 0;
+  let gestureStartRange: [number, number] | null = null;
+  let gestureStartManual = false;
 
   const currentYRange = (): [number, number] => {
     const s = pitchPlot.scales.y;
@@ -746,15 +742,21 @@ function bindChartTouchGestures(): void {
     panStartRange = null;
     pinchStartRange = currentYRange();
     pinchStartDist = pinchDist();
+    tapEligible = false;
   };
 
   pitchViewEl.addEventListener("pointerdown", (e) => {
     if (e.pointerType !== "touch") return;
-    clearTouchResumeTimer();
     pitchViewEl.setPointerCapture(e.pointerId);
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (touches.size === 2) startPinch();
-    else if (touches.size === 1) startPan(e.pointerId);
+    else if (touches.size === 1) {
+      tapEligible = true;
+      gestureDownY = e.clientY;
+      gestureStartRange = currentYRange();
+      gestureStartManual = manualY != null;
+      startPan(e.pointerId);
+    }
   });
 
   pitchViewEl.addEventListener("pointermove", (e) => {
@@ -786,6 +788,7 @@ function bindChartTouchGestures(): void {
     if (e.pointerId === panPointerId && panStartRange != null) {
       const dy = t.y - panStartY;
       if (Math.abs(dy) <= PAN_SLOP_PX && manualY == null) return;
+      tapEligible = false;
       // uPlot bbox is in canvas px; dy is in CSS px — match the units
       const plotCssH = pitchPlot.bbox.height / (window.devicePixelRatio || 1);
       manualY = panYRange(panStartRange, dy, plotCssH);
@@ -795,6 +798,10 @@ function bindChartTouchGestures(): void {
 
   const end = (e: PointerEvent) => {
     if (!touches.delete(e.pointerId)) return;
+    if (e.type === "pointercancel") {
+      tapEligible = false;
+      lastTapAt = 0;
+    }
     if (touches.size >= 2) {
       // re-base the pinch on the remaining pair of fingers
       startPinch();
@@ -807,7 +814,30 @@ function bindChartTouchGestures(): void {
       panPointerId = null;
       panStartRange = null;
       pinchStartRange = null;
-      scheduleYAutoResume();
+      if (tapEligible && Math.abs(e.clientY - gestureDownY) <= PAN_SLOP_PX) {
+        // double-tap is the only way back to auto-follow: the manual view
+        // persists after pan/zoom instead of auto-resuming
+        if (manualY != null && e.timeStamp - lastTapAt <= DOUBLE_TAP_MS) {
+          lastTapAt = 0;
+          resetManualY();
+        } else {
+          lastTapAt = e.timeStamp;
+        }
+      } else if (
+        !gestureStartManual &&
+        manualY != null &&
+        gestureStartRange != null &&
+        Math.max(
+          Math.abs(manualY[0] - gestureStartRange[0]),
+          Math.abs(manualY[1] - gestureStartRange[1]),
+        ) < MANUAL_ENGAGE_SEMITONES
+      ) {
+        // a sloppy tap (or a two-finger tap without zoom) must not silently
+        // strand the chart in manual mode
+        resetManualY();
+      }
+      tapEligible = false;
+      gestureStartRange = null;
     }
   };
 
@@ -823,7 +853,6 @@ function clearChart(): void {
   stopChartLoop();
   resetScrollState(scrollState);
   resetYRangeCache();
-  clearTouchResumeTimer();
   manualY = null;
   clearPitchSeries(pitchX, pitchMidi);
   pendingF0Batches = [];
